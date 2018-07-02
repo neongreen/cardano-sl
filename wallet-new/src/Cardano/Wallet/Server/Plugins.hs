@@ -2,7 +2,9 @@
      A @Plugin@ is essentially a set of actions which will be run in
      a particular monad, at some point in time.
 -}
+{-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE TupleSections #-}
+
 
 module Cardano.Wallet.Server.Plugins (
       Plugin
@@ -18,27 +20,26 @@ module Cardano.Wallet.Server.Plugins (
 
 import           Universum
 
+import           Cardano.NodeIPC (startNodeJsIPC)
 import           Cardano.Wallet.API as API
 import           Cardano.Wallet.API.V1.Headers (applicationJson)
-import qualified Cardano.Wallet.API.V1.Types as V1
 import           Cardano.Wallet.Kernel (PassiveWallet)
-import qualified Cardano.Wallet.Kernel.Diffusion as Kernel
-import qualified Cardano.Wallet.Kernel.Mode as Kernel
-import qualified Cardano.Wallet.LegacyServer as LegacyServer
-import qualified Cardano.Wallet.Server as Server
 import           Cardano.Wallet.Server.CLI (NewWalletBackendParams (..),
                      RunMode, WalletBackendParams (..), isDebugMode,
                      walletAcidInterval, walletDbOptions)
 import           Cardano.Wallet.WalletLayer (ActiveWalletLayer,
                      PassiveWalletLayer)
-import qualified Cardano.Wallet.WalletLayer.Kernel as WalletLayer.Kernel
-import qualified Pos.Wallet.Web.Error.Types as V0
-
 import           Control.Exception (fromException)
 import           Data.Aeson
+import           Data.Aeson.Types (Value (..), typeMismatch)
 import           Formatting (build, sformat, (%))
+import           Generics.SOP.TH (deriveGeneric)
+import           GHC.Generics (Generic)
+import           Network.HTTP.Types (httpVersionNotSupported505)
 import           Network.HTTP.Types.Status (badRequest400)
-import           Network.Wai (Application, Middleware, Response, responseLBS)
+import           Network.HTTP.Types.Version (http20)
+import           Network.Wai (Application, Middleware, Response, httpVersion,
+                     ifRequest, modifyResponse, responseHeaders, responseLBS)
 import           Network.Wai.Handler.Warp (defaultSettings,
                      setOnExceptionResponse)
 import           Network.Wai.Middleware.Cors (cors, corsMethods,
@@ -46,33 +47,39 @@ import           Network.Wai.Middleware.Cors (cors, corsMethods,
                      simpleMethods)
 import           Ntp.Client (NtpStatus)
 import           Pos.Chain.Txp (TxpConfiguration)
-import           Pos.Infra.Diffusion.Types (Diffusion (..))
-import           Pos.Wallet.Web (cleanupAcidStatePeriodically)
-import           Pos.Wallet.Web.Pending.Worker (startPendingTxsResubmitter)
-import qualified Pos.Wallet.Web.Server.Runner as V0
-import           Pos.Wallet.Web.Sockets (getWalletWebSockets,
-                     upgradeApplicationWS)
-import qualified Servant
-import           System.Wlog (logInfo, modifyLoggerName, usingLoggerName)
-
-import           Pos.Context (HasNodeContext)
-import           Pos.Crypto (ProtocolMagic)
-import           Pos.Util (lensOf)
-
-import           Cardano.NodeIPC (startNodeJsIPC)
 import           Pos.Configuration (walletProductionApi,
                      walletTxCreationDisabled)
+import           Pos.Context (HasNodeContext)
+import           Pos.Crypto (ProtocolMagic)
+import           Pos.Infra.Diffusion.Types (Diffusion (..))
 import           Pos.Infra.Shutdown.Class (HasShutdownContext (shutdownContext))
 import           Pos.Launcher.Configuration (HasConfigurations)
+import           Pos.Util (lensOf)
 import           Pos.Util.CompileInfo (HasCompileInfo)
+import           Pos.Wallet.Web (cleanupAcidStatePeriodically)
 import           Pos.Wallet.Web.Mode (WalletWebMode)
+import           Pos.Wallet.Web.Pending.Worker (startPendingTxsResubmitter)
 import           Pos.Wallet.Web.Server.Launcher (walletDocumentationImpl,
                      walletServeImpl)
+import           Pos.Wallet.Web.Sockets (getWalletWebSockets,
+                     upgradeApplicationWS)
 import           Pos.Wallet.Web.State (askWalletDB)
 import           Pos.Wallet.Web.Tracking.Sync (processSyncRequest)
 import           Pos.Wallet.Web.Tracking.Types (SyncQueue)
 import           Pos.Web (serveWeb)
 import           Pos.WorkMode (WorkMode)
+import           System.Wlog (logInfo, modifyLoggerName, usingLoggerName)
+
+import qualified Cardano.Wallet.API.V1.Types as V1
+import qualified Cardano.Wallet.Kernel.Diffusion as Kernel
+import qualified Cardano.Wallet.Kernel.Mode as Kernel
+import qualified Cardano.Wallet.LegacyServer as LegacyServer
+import qualified Cardano.Wallet.Server as Server
+import qualified Cardano.Wallet.WalletLayer.Kernel as WalletLayer.Kernel
+import qualified Data.HashMap.Strict as HMS
+import qualified Pos.Wallet.Web.Error.Types as V0
+import qualified Pos.Wallet.Web.Server.Runner as V0
+import qualified Servant
 
 
 -- A @Plugin@ running in the monad @m@.
@@ -254,8 +261,8 @@ syncWalletWorker = pure $ const $
 -- with a Swagger editor, locally.
 withMiddleware :: RunMode -> Application -> Application
 withMiddleware wrm app
-  | isDebugMode wrm = corsMiddleware app
-  | otherwise = app
+  | isDebugMode wrm = corsMiddleware (rejectHTTP20 app)
+  | otherwise = rejectHTTP20 app
 
 corsMiddleware :: Middleware
 corsMiddleware = cors (const $ Just policy)
@@ -264,3 +271,53 @@ corsMiddleware = cors (const $ Just policy)
         { corsRequestHeaders = ["Content-Type"]
         , corsMethods = "PUT" : simpleMethods
         }
+
+
+-- | On some requests, when using HTTP/2.0, particularly those involving
+-- streaming, the current API -- drops the connection with a rather unclear
+-- error message. There's no particular intent to support HTTP/2.0, so we'll
+-- simply clearly forbid it for now.
+rejectHTTP20 :: Middleware
+rejectHTTP20 =
+    ifRequest (\req -> httpVersion req >= http20) (modifyResponse rejectResponse)
+  where
+    rejectResponse :: Response -> Response
+    rejectResponse res = do
+        let msg =
+              "HTTP/2.0 protocol isn't yet supported by the API. Please configure your client to rely on HTTP/1.1 instead."
+
+        let body =
+              encode . NotSupportedError $ msg
+
+        responseLBS httpVersionNotSupported505 (applicationJson : responseHeaders res) body
+
+
+newtype NotSupportedError
+    = NotSupportedError Text
+    deriving (Generic, Eq, Show)
+
+deriveGeneric ''NotSupportedError
+
+instance ToJSON NotSupportedError where
+    toEncoding (NotSupportedError weDescription) = pairs $ mconcat
+        [ "message"    .= String "NotSupportedError"
+        , "status"     .= String "error"
+        , "diagnostic" .= object
+            [ "description" .= weDescription
+            ]
+        ]
+
+instance FromJSON NotSupportedError where
+    parseJSON (Object o)
+        | HMS.member "message" o =
+            case HMS.lookup "message" o of
+                Just "NotSupportedError" ->
+                    NotSupportedError <$> ((o .: "diagnostic") >>= (.: "description"))
+                _ ->
+                    fail "Incorrect JSON encoding for NotSupportedError"
+
+        | otherwise =
+            fail "Incorrect JSON encoding for NotSupportedError"
+
+    parseJSON invalid =
+        typeMismatch "NotSupportedError" invalid
