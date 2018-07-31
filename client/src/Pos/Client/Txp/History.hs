@@ -49,6 +49,7 @@ import           Pos.Core.Block (Block, MainBlock, headerHash, mainBlockSlot,
                      mainBlockTxPayload)
 import           Pos.Core.Block.Constructors (genesisBlock0)
 --import           Pos.Core.JsonLog (CanJsonLog (..))
+import           Pos.Core.StateLock (StateLock, StateLockMetrics)
 import           Pos.Crypto (ProtocolMagic, WithHash (..), withHash)
 import           Pos.DB (MonadDBRead, MonadGState)
 import           Pos.DB.Block (getBlock)
@@ -58,7 +59,6 @@ import qualified Pos.GState as GS
 import           Pos.Infra.Network.Types (HasNodeType)
 import           Pos.Infra.Slotting (MonadSlots, getSlotStartPure,
                      getSystemStartM)
-import           Pos.Infra.StateLock (StateLock, StateLockMetrics)
 import           Pos.Infra.Util.JsonLog.Events (MemPoolModifyReason)
 import           Pos.Util (eitherToThrow, maybeThrow)
 import           Pos.Util.Trace (noTrace)

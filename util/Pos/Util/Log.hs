@@ -171,6 +171,11 @@ setupLogging lc = do
                                       (Internal.sev2klog $ fromMaybe Debug $ lh ^. lhMinSeverity)
                                       K.V0
                         return (lh ^. lhName, scribe)
+                    StderrBE -> do
+                        scribe <- mkStderrScribe
+                                      (Internal.sev2klog $ fromMaybe Debug $ lh ^. lhMinSeverity)
+                                      K.V0
+                        return (lh ^. lhName, scribe)
                     DevNullBE -> do
                         scribe <- mkDevNullScribe _lh
                                       (Internal.sev2klog $ fromMaybe Debug $ lh ^. lhMinSeverity)

@@ -1,6 +1,7 @@
 -- | provide backends for `katip`
 module Pos.Util.Log.Scribes
     ( mkStdoutScribe
+    , mkStderrScribe
     , mkDevNullScribe
     , mkFileScribe
     , mkJsonFileScribe
@@ -8,7 +9,7 @@ module Pos.Util.Log.Scribes
 
 import           Universum hiding (fromString)
 
-import           Control.Exception.Safe (catchIO)
+import           Control.Exception.Safe (Exception (..), catchIO)
 
 import           Data.Aeson.Text (encodeToLazyText)
 import           Data.Text.Lazy.Builder
@@ -18,7 +19,7 @@ import           Katip.Format.Time (formatAsIso8601)
 import           Katip.Scribes.Handle (brackets, getKeys)
 import           System.FilePath ((</>))
 import           System.IO (BufferMode (LineBuffering), Handle,
-                     IOMode (WriteMode), hFlush, hSetBuffering, stdout)
+                     IOMode (WriteMode), hFlush, hSetBuffering, stderr, stdout)
 import           System.IO.Unsafe (unsafePerformIO)
 
 import qualified Pos.Util.Log.Internal as Internal
@@ -33,14 +34,17 @@ import qualified Pos.Util.Log.Internal as Internal
 lock :: MVar ()
 lock = unsafePerformIO $ newMVar ()
 
+prtoutException :: Exception e => FilePath -> e -> IO ()
+prtoutException fp e = do
+    putStrLn $ "error while opening log @ " ++ fp
+    putStrLn $ "exception: " ++ displayException e
 
 -- | create a katip scribe for logging to a file (JSON)
 mkJsonFileScribe :: FilePath -> FilePath -> Severity -> Verbosity -> IO Scribe
 mkJsonFileScribe bp fp s v = do
     h <- catchIO (openFile (bp </> fp) WriteMode) $
             \e -> do
-                putStrLn $ "error while opening log @ " ++ (bp </> fp)
-                putStrLn $ "exception: " ++ show e
+                prtoutException (bp </> fp) e
                 return stdout    -- fallback to standard output in case of exception
     hSetBuffering h LineBuffering
     _lock <- newMVar ()
@@ -57,8 +61,7 @@ mkFileScribe :: FilePath -> FilePath -> Bool -> Severity -> Verbosity -> IO Scri
 mkFileScribe bp fp colorize s v = do
     h <- catchIO (openFile (bp </> fp) WriteMode) $
             \e -> do
-                putStrLn $ "error while opening log @ " ++ (bp </> fp)
-                putStrLn $ "exception: " ++ show e
+                prtoutException (bp </> fp) e
                 return stdout    -- fallback to standard output in case of exception
     _mkFileScribe h colorize s v
 
@@ -75,9 +78,14 @@ _mkFileScribe h colorize s v = do
     pure $ Scribe logger (hFlush h)
 
 -- | create a katip scribe for logging to the console
--- calls '_mkFileScribe'
+-- (stdout) calls '_mkFileScribe'
 mkStdoutScribe :: Severity -> Verbosity -> IO Scribe
 mkStdoutScribe = _mkFileScribe stdout True
+
+-- | create a katip scribe for logging to stderr
+-- calls '_mkFileScribe'
+mkStderrScribe :: Severity -> Verbosity -> IO Scribe
+mkStderrScribe = _mkFileScribe stderr True
 
 -- | @Scribe@ that outputs to '/dev/null' without locking
 mkDevNullScribe :: Internal.LoggingHandler -> Severity -> Verbosity -> IO Scribe

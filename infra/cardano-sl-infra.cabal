@@ -35,9 +35,6 @@ library
                         Pos.Infra.Reporting.NodeInfo
                         Pos.Infra.Reporting.Statsd
 
-                        -- StateLock
-                        Pos.Infra.StateLock
-
                         -- Slotting
                         Pos.Infra.Slotting
                         Pos.Infra.Slotting.Class

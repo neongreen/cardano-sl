@@ -8,17 +8,14 @@ module Pos.Core.Exception
        , cardanoExceptionFromException
 
        , CardanoFatalError (..)
-       , reportFatalError
        , traceFatalError
        , assertionFailed
-       , assertionFailed0
        ) where
 
 import           Control.Exception.Safe (Exception (..))
 import           Data.Typeable (cast)
 import           Formatting (bprint, stext, (%))
 import qualified Formatting.Buildable
-import           Pos.Util.Log (WithLogger, logError)
 import qualified Pos.Util.Trace.Named as TN
 import           Serokell.Util (Color (Red), colorize)
 import qualified Text.Show
@@ -67,14 +64,6 @@ instance Exception CardanoFatalError where
     displayException = toString . pretty
 
 -- | Print red message about fatal error and throw exception.
-reportFatalError
-    :: (WithLogger m, MonadThrow m)
-    => Text -> m a
-reportFatalError msg = do
-    logError $ colorize Red msg
-    throwM $ CardanoFatalError msg
-
--- | Print red message about fatal error and throw exception.
 traceFatalError
     :: MonadThrow m
     => TN.TraceNamed m -> Text -> m a
@@ -87,8 +76,3 @@ assertionFailed :: MonadThrow m => TN.TraceNamed m -> Text -> m a
 assertionFailed logTrace msg =
     traceFatalError logTrace $ "assertion failed: " <> msg
 
-assertionFailed0
-    :: (WithLogger m, MonadThrow m)
-    => Text -> m a
-assertionFailed0 msg =
-    reportFatalError $ "assertion failed: " <> msg

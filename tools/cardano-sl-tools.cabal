@@ -372,6 +372,7 @@ executable cardano-post-mortem
                        , fgl
                        , filepath
                        , foldl
+                       , formatting
                        , graphviz
                        , optparse-applicative
                        , pipes

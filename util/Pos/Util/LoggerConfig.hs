@@ -11,6 +11,7 @@ module Pos.Util.LoggerConfig
        , LogSecurityLevel (..)
        , defaultTestConfiguration
        , defaultInteractiveConfiguration
+       , defaultStdErrConfiguration
        , jsonInteractiveConfiguration
        -- * access
        , lcLoggerTree
@@ -47,6 +48,7 @@ import           Pos.Util.Log.Severity
 data BackendKind = FileTextBE
                  | FileJsonBE
                  | StdoutBE
+                 | StderrBE
                  | DevNullBE
                  deriving (Eq, Generic, Show)
 deriving instance ToJSON BackendKind
@@ -216,6 +218,25 @@ defaultInteractiveConfiguration minSeverity =
             _ltHandlers = [ LogHandler {
                 _lhBackend = StdoutBE,
                 _lhName = "console",
+                _lhFpath = Nothing,
+                _lhSecurityLevel = Just SecretLogLevel,
+                _lhMinSeverity = Just minSeverity }
+                          ]
+          }
+    in
+    LoggerConfig{..}
+
+-- | @LoggerConfig@ used interactively
+-- output to console and minimum Debug severity
+defaultStdErrConfiguration :: Severity -> LoggerConfig
+defaultStdErrConfiguration minSeverity =
+    let _lcRotation = Nothing
+        _lcBasePath = Nothing
+        _lcLoggerTree = LoggerTree {
+            _ltMinSeverity = Debug,
+            _ltHandlers = [ LogHandler {
+                _lhBackend = StderrBE,
+                _lhName = "stderr",
                 _lhFpath = Nothing,
                 _lhSecurityLevel = Just SecretLogLevel,
                 _lhMinSeverity = Just minSeverity }

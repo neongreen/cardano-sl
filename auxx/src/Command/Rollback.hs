@@ -17,13 +17,13 @@ import           Pos.Chain.Txp (flattenTxPayload)
 import           Pos.Core (difficultyL, epochIndexL)
 import           Pos.Core.Block (mainBlockTxPayload)
 import           Pos.Core.Chrono (NewestFirst, _NewestFirst)
+import           Pos.Core.StateLock (Priority (..), withStateLock)
 import           Pos.Core.Txp (TxAux)
 import           Pos.Crypto (ProtocolMagic)
 import           Pos.DB.Block (BypassSecurityCheck (..),
                      ShouldCallBListener (..), rollbackBlocksUnsafe)
 import qualified Pos.DB.Block as DB
 import qualified Pos.DB.BlockIndex as DB
-import           Pos.Infra.StateLock (Priority (..), withStateLock)
 import           Pos.Infra.Util.JsonLog.Events (MemPoolModifyReason (..))
 import           Pos.Util.Trace (noTrace)
 import           Pos.Util.Trace.Named (TraceNamed, logInfo)

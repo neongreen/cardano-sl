@@ -16,6 +16,8 @@ import qualified Data.HashMap.Strict as HM
 import           Pos.Chain.Txp (ToilVerFailure (..), TxpConfiguration, Utxo)
 import           Pos.Core (EpochIndex, Timestamp)
 --import           Pos.Core.JsonLog (CanJsonLog (..))
+import           Pos.Core.StateLock (Priority (..), StateLock, StateLockMetrics,
+                     withStateLock)
 import           Pos.Core.Txp (TxAux (..), TxId)
 import           Pos.Core.Update (BlockVersionData)
 import           Pos.Crypto (ProtocolMagic)
@@ -24,8 +26,6 @@ import           Pos.DB.Txp.Logic (txNormalizeAbstract,
 import           Pos.DB.Txp.MemState (MempoolExt, TxpLocalWorkMode, getTxpExtra,
                      withTxpLocalData)
 import           Pos.Infra.Slotting (MonadSlots (getCurrentSlot), getSlotStart)
-import           Pos.Infra.StateLock (Priority (..), StateLock,
-                     StateLockMetrics, withStateLock)
 import           Pos.Infra.Util.JsonLog.Events (MemPoolModifyReason (..))
 import qualified Pos.Util.Modifier as MM
 import           Pos.Util.Trace (natTrace, noTrace)
