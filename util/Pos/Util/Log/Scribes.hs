@@ -2,6 +2,7 @@
 module Pos.Util.Log.Scribes
     ( mkStdoutScribe
     , mkStderrScribe
+    , mkDevNullScribe
     , mkFileScribe
     , mkJsonFileScribe
     ) where
@@ -16,13 +17,11 @@ import qualified Data.Text.Lazy.IO as T
 import           Katip.Core
 import           Katip.Format.Time (formatAsIso8601)
 import           Katip.Scribes.Handle (brackets, getKeys)
+import qualified Pos.Util.Log.Internal as Internal
 import           System.FilePath ((</>))
 import           System.IO (BufferMode (LineBuffering), Handle,
                      IOMode (WriteMode), hFlush, hSetBuffering, stderr, stdout)
 import           System.IO.Unsafe (unsafePerformIO)
-
-import qualified Pos.Util.Log.Internal as Internal
-
 
 -- | global lock for file Scribes
 {-# NOINLINE lock #-}
@@ -81,6 +80,18 @@ mkStdoutScribe = mkFileScribeH stdout True
 -- calls '_mkFileScribe'
 mkStderrScribe :: Severity -> Verbosity -> IO Scribe
 mkStderrScribe = mkFileScribeH stderr True
+
+--- | @Scribe@ that outputs to '/dev/null' without locking
+mkDevNullScribe :: Internal.LoggingHandler -> Severity -> Verbosity -> IO Scribe
+mkDevNullScribe lh s v = do
+    h <- openFile "/dev/null" WriteMode
+    let colorize = False
+    hSetBuffering h LineBuffering
+    let logger :: forall a. LogItem a => Item a -> IO ()
+        logger item = when (permitItem s item) $
+            Internal.incrementLinesLogged lh
+              >> (T.hPutStrLn h $! toLazyText $ formatItem colorize v item)
+    pure $ Scribe logger (hFlush h)
 
 
 -- | format a @LogItem@ with subsecond precision (ISO 8601)

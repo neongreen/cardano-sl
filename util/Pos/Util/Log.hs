@@ -36,8 +36,6 @@ module Pos.Util.Log
 import           Universum
 
 import           Control.Lens (each)
-import           Control.Monad.Base (MonadBase)
-import           Control.Monad.Morph (MFunctor (..))
 
 import           Pos.Util.Log.Severity (Severity (..))
 import           Pos.Util.LoggerConfig
@@ -146,6 +144,11 @@ setupLogging lc = do
                         return (lh ^. lhName, scribe)
                     StderrBE -> do
                         scribe <- mkStderrScribe
+                                      (Internal.sev2klog $ fromMaybe Debug $ lh ^. lhMinSeverity)
+                                      K.V0
+                        return (lh ^. lhName, scribe)
+                    DevNullBE -> do
+                        scribe <- mkDevNullScribe _lh
                                       (Internal.sev2klog $ fromMaybe Debug $ lh ^. lhMinSeverity)
                                       K.V0
                         return (lh ^. lhName, scribe)

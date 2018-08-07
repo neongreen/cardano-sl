@@ -1,8 +1,6 @@
 -- | Unstructured logging via Pos.Util.Trace: a text message with severity
 -- and privacy levels.
 
-{-# LANGUAGE GADTSyntax #-}
-
 module Pos.Util.Trace.Unstructured
     ( LogItem (..)
     , LogPrivacy (..)
@@ -49,14 +47,10 @@ import           Pos.Util.Trace (Trace (..), traceWith)
 
 
 data LogPrivacy =
-    -- | Only to public logs.
-    Public | --:: LogPrivacy
-    -- | Only to public logs, not console.
-    PublicUnsafe | --:: LogPrivacy
-    -- | Only to private logs.
-    Private | --:: LogPrivacy
-    -- | To public and private logs.
-    Both    --:: LogPrivacy
+      Public       -- only to public logs.
+    | PublicUnsafe -- only to public logs, not console.
+    | Private      -- only to private logs.
+    | Both         -- to public and private logs.
     deriving (Show)
 
 -- | An unstructured log item.
@@ -116,9 +110,7 @@ logErrorS logTrace   = traceLogItem logTrace Private Log.Error
 
 type SecuredText = LogSecurityLevel -> Text
 
-data LogSecurityLevel where
-    SecretLogLevel :: LogSecurityLevel
-    PublicLogLevel :: LogSecurityLevel
+data LogSecurityLevel = SecretLogLevel | PublicLogLevel
 
 -- | Log to public logs, and to private logs securely (the 'SecuredText' is
 -- run at the 'SecretLogLevel').
