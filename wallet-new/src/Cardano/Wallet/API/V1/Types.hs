@@ -79,6 +79,8 @@ module Cardano.Wallet.API.V1.Types (
   , CaptureAccountId
   -- * Core re-exports
   , Core.Address
+  , UtxoStatistics (..)
+  , HistogramBar (..)
   ) where
 
 import           Universum
@@ -816,6 +818,101 @@ instance BuildableSafeGen Wallet where
 instance Buildable [Wallet] where
     build = bprint listJson
 
+
+--------------------------------------------------------------------------------
+-- Utxo statistics
+--------------------------------------------------------------------------------
+
+-- | Utxo statistics for the wallet.
+-- | Histogram is composed of bars that represent the bucket. The bucket is tagged by upper bound of a given bucket.
+-- | The bar value corresponds to the number of stakes
+-- | In the future the var value could be different things:
+-- | (a) sum of stakes in a bucket
+-- | (b) avg or std of stake in a bucket
+-- | (c) topN buckets
+-- | to name a few
+newtype HistogramBar = HistogramBar { theBar :: (Text, Integer) }
+  deriving (Eq, Show, Generic, Ord)
+
+deriveJSON Serokell.defaultOptions ''HistogramBar
+
+instance ToSchema HistogramBar where
+    declareNamedSchema = genericSchemaDroppingPrefix "the" (\_ -> identity)
+
+deriveSafeBuildable ''HistogramBar
+instance BuildableSafeGen HistogramBar where
+    buildSafeGen _ HistogramBar{..} =
+        bprint ("{ bar="%build%" }") theBar
+
+instance Arbitrary HistogramBar where
+    arbitrary = HistogramBar <$> arbitrary
+
+data UtxoStatistics = UtxoStatistics
+  { theHistogram :: ![HistogramBar]
+  , theAllStakes :: !Integer
+  } deriving (Show, Eq, Generic, Ord)
+
+deriveJSON Serokell.defaultOptions ''UtxoStatistics
+
+instance ToSchema UtxoStatistics where
+    declareNamedSchema =
+        genericSchemaDroppingPrefix "the" (\(--^) props -> props
+            & ("histogram"            --^ "Utxo histogram for a given wallet.")
+            & ("allStakes"            --^ "All Utxo stakes for a given wallet.")
+        )
+
+instance Arbitrary UtxoStatistics where
+    arbitrary = UtxoStatistics <$> arbitrary
+                               <*> arbitrary
+
+instance Buildable [HistogramBar] where
+    build =
+        bprint listJson
+
+
+deriveSafeBuildable ''UtxoStatistics
+instance BuildableSafeGen UtxoStatistics where
+    buildSafeGen _ UtxoStatistics{..} = bprint ("{"
+        %" histogram="%build
+        %" allStakes="%build
+        %" }")
+        theHistogram
+        theAllStakes
+
+
+{-
+data UtxoStatistics = UtxoStatistics
+  { theHistogram :: ![(Text, Integer)]
+  , theAllStakes :: !Integer
+  } deriving (Show, Eq, Generic, Ord)
+
+deriveJSON Serokell.defaultOptions ''UtxoStatistics
+
+instance ToSchema UtxoStatistics where
+    declareNamedSchema =
+        genericSchemaDroppingPrefix "the" (\(--^) props -> props
+            & ("histogram"            --^ "Utxo histogram for a given wallet.")
+            & ("allStakes"            --^ "All Utxo stakes for a given wallet.")
+        )
+
+instance Arbitrary UtxoStatistics where
+    arbitrary = UtxoStatistics <$> arbitrary
+                               <*> arbitrary
+
+instance Buildable [(Text, Integer)] where
+    build =
+        bprint listJson
+
+
+deriveSafeBuildable ''UtxoStatistics
+instance BuildableSafeGen UtxoStatistics where
+    buildSafeGen sl UtxoStatistics{..} = bprint ("{"
+        %" histogram="%build
+        %" allStakes="%build
+        %" }")
+        theHistogram
+        theAllStakes
+-}
 --------------------------------------------------------------------------------
 -- Addresses
 --------------------------------------------------------------------------------
@@ -1871,6 +1968,8 @@ instance Example AddressValidity
 instance Example NewAddress
 instance Example SubscriptionStatus
 instance Example NodeId
+instance Example HistogramBar
+instance Example UtxoStatistics
 
 
 

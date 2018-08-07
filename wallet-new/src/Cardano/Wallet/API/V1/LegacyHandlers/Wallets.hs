@@ -32,6 +32,10 @@ import           Pos.Wallet.Web.Methods.Logic (MonadWalletLogic,
 import           Pos.Wallet.Web.Tracking.Types (SyncQueue)
 import           Servant
 
+import qualified Control.Foldl as L
+import           Data.HashMap.Strict as HMS
+import qualified Data.Text as T
+
 -- | All the @Servant@ handlers for wallet-specific operations.
 handlers :: HasConfigurations
          => ServerT Wallets.API MonadV1
@@ -41,6 +45,7 @@ handlers = newWallet
     :<|> deleteWallet
     :<|> getWallet
     :<|> updateWallet
+    :<|> getUtxoStatistics
 
 
 -- | Pure function which returns whether or not the underlying node is
@@ -115,7 +120,7 @@ listWallets params fops sops = do
     ws <- V0.askWalletSnapshot
     currentDepth <- V0.networkChainDifficulty
     respondWith params fops sops (IxSet.fromList <$> do
-        (V0.getWalletsWithInfo ws >>= (migrate @_ @[V1.Wallet] . map (\(w, i) -> (w,i,currentDepth)))))
+        (V0.getWalletsWithInfo ws >>= (migrate @_ @[V1.Wallet] . Universum.map (\(w, i) -> (w,i,currentDepth)))))
 
 updatePassword
     :: ( MonadWalletLogic ctx m
@@ -185,3 +190,50 @@ updateWallet wid WalletUpdate{..} = do
         -- reacquire the snapshot because we did an update
         ws' <- V0.askWalletSnapshot
         addWalletInfo ws' updated
+
+-- | Gets Utxo statistics for a wallet.
+-- | Now stub, not calling data layer yet.
+getUtxoStatistics
+    :: (MonadWalletLogic ctx m)
+    => WalletId
+    -> m (WalletResponse UtxoStatistics)
+getUtxoStatistics wid = do
+    return $ single (computeUtxoStatistics [1::Integer,2,3,10,20,30,101])
+
+
+computeUtxoStatistics :: [Integer] ->  UtxoStatistics
+computeUtxoStatistics xs = L.fold (summarizeUtxoStatistics $ generateBounds Log10) xs
+
+-- | Using foldl library enable as to capture a number of aggregations in one pass. This thanks to L.Fold being an Applicative
+summarizeUtxoStatistics :: [Integer] -> L.Fold Integer UtxoStatistics
+summarizeUtxoStatistics bounds = UtxoStatistics
+  <$> populateBuckets bounds
+  <*> L.sum
+
+-- | Buckets boundaries can be constructed in different way
+data BoundType = Log10 | Haphazard
+
+generateBounds :: BoundType -> [Integer]
+generateBounds bType =
+    case bType of
+        Log10 -> (zipWith (\ten toPower -> ten^toPower :: Integer) (repeat (10::Integer)) [(1::Integer)..16]) ++ [45 * (10^(15::Integer))]
+        Haphazard -> [10, 100, 1000, 10000]
+
+
+populateBuckets ::  [Integer] ->  L.Fold Integer [HistogramBar]
+populateBuckets bounds =
+    case bounds of
+        (x:_) -> L.Fold (addCountInBuckets x) (initalizeHM bounds) (fmap (\pair -> HistogramBar (T.pack $ show $ fst pair, snd pair) ) . HMS.toList)
+        _ -> error "populateBuckets has to be powered with nonempty bounds"
+    where
+        initalizeHM :: [Integer] -> HMS.HashMap Integer Integer
+        initalizeHM b = HMS.fromList $ zip b (repeat 0)
+        retrieveProperBound :: (Ord a) => [a] -> a -> a -> a
+        retrieveProperBound [] _ prev = prev
+        retrieveProperBound (x:xs) stake _ =
+            if (stake > x) then
+                retrieveProperBound xs stake x
+            else
+                x
+        addCountInBuckets :: Integer -> HMS.HashMap Integer Integer -> Integer -> HMS.HashMap Integer Integer
+        addCountInBuckets firstElem acc entry = HMS.adjust (+1) (retrieveProperBound bounds entry firstElem) acc

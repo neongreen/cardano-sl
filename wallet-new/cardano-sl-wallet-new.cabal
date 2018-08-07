@@ -153,6 +153,7 @@ library
                      , data-default-class
                      , exceptions
                      , formatting
+                     , foldl
                      , generics-sop
                      , http-api-data
                      , http-client

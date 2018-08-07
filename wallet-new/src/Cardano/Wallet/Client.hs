@@ -88,6 +88,8 @@ data WalletClient m
         :: WalletId -> Resp m Wallet
     , updateWallet
          :: WalletId -> Update Wallet -> Resp m Wallet
+    , getUtxoStatistics
+        :: WalletId -> Resp m UtxoStatistics
     -- account endpoints
     , deleteAccount
          :: WalletId -> AccountIndex -> m (Either ClientError ())
@@ -209,6 +211,8 @@ hoistClient phi wc = WalletClient
          phi . getWallet wc
     , updateWallet =
          \x -> phi . updateWallet wc x
+    , getUtxoStatistics =
+         phi . getUtxoStatistics wc
     , deleteAccount =
          \x -> phi . deleteAccount wc x
     , getAccount =
@@ -274,4 +278,3 @@ instance Exception ClientError where
     toException (ClientWalletError  e) = toException e
     toException (ClientHttpError    e) = toException e
     toException (UnknownClientError e) = toException e
-
