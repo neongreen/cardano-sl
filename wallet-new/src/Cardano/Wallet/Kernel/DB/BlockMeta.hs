@@ -51,13 +51,15 @@ makeLenses ''AddressMeta
 makeLenses ''BlockMeta
 
 deriveSafeCopy 1 'base ''AddressMeta
-
--- TODO @uroboros/ryan [CBR 305] Implement Safecopy instances independently from legacy wallet
-instance SafeCopy (InDb (Map Core.Address AddressMeta)) where
-    putCopy (InDb h) = contain $ safePut h
-    getCopy = contain $ InDb <$> safeGet
-
 deriveSafeCopy 1 'base ''BlockMeta
+
+instance SafeCopy (InDb AddressMeta) where
+    getCopy = contain (fmap InDb safeGet)
+    putCopy (InDb x) = contain (safePut x)
+
+instance SafeCopy (InDb BlockMeta) where
+    getCopy = contain (fmap InDb safeGet)
+    putCopy (InDb x) = contain (safePut x)
 
 instance Semigroup AddressMeta where
   a <> b = mergeAddrMeta a b

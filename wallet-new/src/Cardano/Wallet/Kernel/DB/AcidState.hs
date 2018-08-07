@@ -59,7 +59,7 @@ import           Cardano.Wallet.Kernel.DB.HdWallet
 import qualified Cardano.Wallet.Kernel.DB.HdWallet.Create as HD
 import qualified Cardano.Wallet.Kernel.DB.HdWallet.Delete as HD
 import qualified Cardano.Wallet.Kernel.DB.HdWallet.Update as HD
-import           Cardano.Wallet.Kernel.DB.InDb
+import           Cardano.Wallet.Kernel.DB.InDb (InDb(InDb))
 import           Cardano.Wallet.Kernel.DB.Spec
 import qualified Cardano.Wallet.Kernel.DB.Spec.Update as Spec
 import qualified Cardano.Wallet.Kernel.DB.Spec.Util as Spec
@@ -133,7 +133,7 @@ newPending accountId tx = runUpdate' . zoom dbHdWallets $
 -- transactions for all the wallets managed by this edge node.
 cancelPending :: Map HdAccountId (InDb (Set Txp.TxId)) -> Update DB ()
 cancelPending cancelled = void . runUpdate' . zoom dbHdWallets $
-    forM_ (Map.toList cancelled) $ \(accountId, InDb txids) ->
+    forM_ (Map.toList cancelled) $ \(accountId, InDb txids) -> do
         -- Here we are deliberately swallowing the possible exception
         -- returned by the wrapped 'zoom' as the only reason why this update
         -- might fail is if, in the meantime, the target account was cancelled,
