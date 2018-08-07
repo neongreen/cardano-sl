@@ -11,7 +11,6 @@ module Pos.Util.Trace.Unstructured
     , privateLogItem
     , publicPrivateLogItem
 
-    --, traceLogItem
     , setupLogging
 
     , logDebug
@@ -40,28 +39,24 @@ module Pos.Util.Trace.Unstructured
     , logNoticeSP
     , logWarningSP
 
-    --, logException
-    --, bracketWithLogging
-
     ) where
 
 import           Universum
---import qualified Control.Exception as E
 
 import           Data.Functor.Contravariant (Op (..))
 import qualified Pos.Util.Log as Log
 import           Pos.Util.Trace (Trace (..), traceWith)
 
 
-data LogPrivacy where
+data LogPrivacy =
     -- | Only to public logs.
-    Public  :: LogPrivacy
+    Public | --:: LogPrivacy
     -- | Only to public logs, not console.
-    PublicUnsafe  :: LogPrivacy
+    PublicUnsafe | --:: LogPrivacy
     -- | Only to private logs.
-    Private :: LogPrivacy
+    Private | --:: LogPrivacy
     -- | To public and private logs.
-    Both    :: LogPrivacy
+    Both    --:: LogPrivacy
     deriving (Show)
 
 -- | An unstructured log item.
@@ -158,30 +153,3 @@ unstructuredTrace ln lh = Trace $ Op $ \logitem ->
         message = liMessage logitem
     in
     liftIO $ Log.usingLoggerName lh ln $ Log.logMessage severity message
-
-{-
--- | Log an exception if it's raised.
--- FIXME should not define here.
-logException :: Trace IO Text -> IO a -> IO a
-logException logTrace = E.handle (\e -> handler e >> E.throwIO e)
-  where
-    handler :: E.SomeException -> IO ()
-    handler exc = traceWith logTrace ("logException: " <> show exc)
-
--- | 'bracket' which logs given message after acquiring the resource
--- and before releasing it.
--- FIXME should not define here.
-bracketWithLogging
-    :: Trace IO Text
-    -> Text
-    -> IO a
-    -> (a -> IO b)
-    -> (a -> IO c)
-    -> IO c
-bracketWithLogging logTrace msg acquire release = E.bracket acquire' release'
-  where
-    -- Logging goes into the 'acquire' and 'release', not into the continuation
-    -- itself.
-    acquire'   = acquire <* traceWith logTrace ("<bracketWithLogging:before> " <> msg)
-    release' r = traceWith logTrace ("<bracketWithLogging:after> " <> msg) *> release r
--}
