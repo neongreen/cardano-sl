@@ -1,12 +1,4 @@
-{-# LANGUAGE DataKinds                 #-}
-{-# LANGUAGE ExistentialQuantification #-}
-{-# LANGUAGE GADTs                     #-}
-{-# LANGUAGE KindSignatures            #-}
-{-# LANGUAGE Rank2Types                #-}
-{-# LANGUAGE TypeFamilies              #-}
-
 -- | Safe/secure logging
-
 module Pos.Util.Log.LogSafe
        ( -- * Logging functions
          SelectiveLogWrapped(..)
@@ -131,8 +123,8 @@ logItemS
 logItemS lhandler a ns loc sev cond msg = do
     mayle <- liftIO $ getLogEnv lhandler
     case mayle of
-        Nothing              -> error "logging not yet initialized. Abort."
-        Just le@K.LogEnv{..} -> do
+        Nothing -> error "logging not yet initialized. Abort."
+        Just le -> do
             maycfg <- liftIO $ getConfig lhandler
             let cfg = case maycfg of
                     Nothing -> error "No Configuration for logging found. Abort."
