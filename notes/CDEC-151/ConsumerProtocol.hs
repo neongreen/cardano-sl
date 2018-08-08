@@ -5,6 +5,7 @@
 module ConsumerProtocol where
 
 import Data.Word
+import Data.Functor.Sum (Sum (..))
 import Data.List (tails, foldl')
 --import Data.Maybe
 import Data.Hashable
@@ -16,7 +17,8 @@ import qualified Data.PriorityQueue.FingerTree as PQueue
 
 import Control.Applicative
 import Control.Monad
-import Control.Monad.Free (Free (..), liftF)
+import Control.Monad.Free (Free (..))
+import Control.Monad.Free as Free
 import Control.Concurrent.STM (STM, retry)
 import Control.Exception (assert)
 import Control.Monad.ST.Lazy
@@ -71,6 +73,28 @@ class Monad m => MonadSendRecv m where
   newChan :: m (BiChan m s r)
   sendMsg :: BiChan m s r -> s -> m ()
   recvMsg :: BiChan m s r -> m r
+
+data SendRecvF (chan :: * -> * -> *) a where
+  NewChanF :: (chan s r -> a) -> SendRecvF chan a
+  SendMsgF :: chan s r -> s -> a -> SendRecvF chan a
+  RecvMsgF :: chan s r -> (r -> a) -> SendRecvF chan a
+
+instance Functor (SendRecvF chan) where
+  fmap f (NewChanF k)     = NewChanF (f . k)
+  fmap f (SendMsgF c s a) = SendMsgF c s (f a)
+  fmap f (RecvMsgF c k)   = RecvMsgF c (f . k)
+
+instance MonadSendRecv (Free (SendRecvF chan)) where
+  type BiChan (Free (SendRecvF chan)) = chan
+  newChan        = Free.liftF $ NewChanF id
+  sendMsg chan s = Free.liftF $ SendMsgF chan s ()
+  recvMsg chan   = Free.liftF $ RecvMsgF chan id
+
+instance Functor f => MonadSendRecv (Free (Sum f (SendRecvF chan))) where
+  type BiChan (Free (Sum f (SendRecvF chan)))= chan
+  newChan        = Free.liftF $ InR (NewChanF id)
+  sendMsg chan s = Free.liftF $ InR (SendMsgF chan s ())
+  recvMsg chan   = Free.liftF $ InR (RecvMsgF chan id)
 
 -- | In this protocol the consumer always initiates things and the producer
 -- replies. This is the type of messages that the consumer sends.
@@ -165,11 +189,11 @@ producerSideProtocol1 tryReadChainUpdate readChainUpdate rid chan =
 simulateWire
   :: (SimChan s p c -> SimM s ())
   -> (SimChan s c p -> SimM s ())
-  -> SimM s ()
+  -> Free (Sum (SimF s) (SendRecvF (SimChan s))) ()
 simulateWire protocolSideA protocolSideB = do
     chan <- newChan
-    fork $ protocolSideA chan
-    fork $ protocolSideB (flipSimChan chan)
+    hoistFree InL $ fork $ protocolSideA chan
+    hoistFree InL $ fork $ protocolSideB (flipSimChan chan)
     return ()
 
 --
@@ -229,26 +253,37 @@ instance TimeMeasure VTime where
   addTime  (VTimeDuration d) (VTime t) = VTime (t+d)
 
 instance MonadSay (Free (SimF s)) where
-  say    msg  = liftF $ Say [msg] ()
+  say    msg = Free.liftF $ Say [msg] ()
 
 instance MonadProbe (Free (SimF s)) where
   type Probe (Free (SimF s)) = SimProbe s
-  probeOutput p o = liftF $ Probe p o ()
+  probeOutput p o = Free.liftF $ Probe p o ()
 
 instance MonadTimer (Free (SimF s)) where
   type Time (Free (SimF s)) = VTime
-  timer t action = liftF $ Timer t action ()
+  timer t action = Free.liftF $ Timer t action ()
 
 instance MonadConc (Free (SimF s)) where
   type MVar (Free (SimF s)) = SimMVar s
 
-  fork          task = liftF $ Fork task ()
-  newEmptyMVar       = liftF $ NewMVar id
+  fork          task = Free.liftF $ Fork task ()
+  newEmptyMVar       = Free.liftF $ NewMVar id
   newMVar          x = do mvar <- newEmptyMVar; putMVar mvar x; return mvar
-  tryPutMVar  mvar x = liftF $ TryPutMVar mvar x id
-  tryTakeMVar mvar   = liftF $ TryTakeMVar mvar id
-  takeMVar    mvar   = liftF $ TakeMVar mvar id
-  putMVar     mvar x = liftF $ PutMVar  mvar x ()
+  tryPutMVar  mvar x = Free.liftF $ TryPutMVar mvar x id
+  tryTakeMVar mvar   = Free.liftF $ TryTakeMVar mvar id
+  takeMVar    mvar   = Free.liftF $ TakeMVar mvar id
+  putMVar     mvar x = Free.liftF $ PutMVar  mvar x ()
+
+-- TODO: there's an obstraction to build @MonadConc@ instance for
+-- @Free (Sum (SimF s) g)@  (see the comment above `fork`), but this might not
+-- be a problem for us.
+{--
+  - instance (Functor g) => MonadConc (Free (Sum (SimF s) g)) where
+  -   type MVar (Free (Sum (SimF s) g)) = MVar (Free (SimF s))
+  -
+  -   -- `task :: Free (Sum SimF s) g ()` but `_task :: Free SimF ()`
+  -   fork task = Free $ InL (Fork _task (return ()))
+  --}
 
 instance MonadSendRecv (Free (SimF s)) where
   type BiChan (Free (SimF s)) = SimChan s
@@ -522,10 +557,10 @@ example1 xs = do
       x <- takeMVar v
       probeOutput p x
 
-example2 :: TestChainAndUpdates -> SimM s ()
+example2 :: TestChainAndUpdates -> Free (Sum (SimF s) (SendRecvF (SimChan s))) ()
 example2 = \(TestChainAndUpdates _c us) -> do
-    chainvar <- newEmptyMVar
-    fork $ generator chainvar us
+    chainvar <- hoistFree InL newEmptyMVar
+    hoistFree InL $ fork $ generator chainvar us
     simulateWire (producer chainvar) consumer
   where
     generator chainvar us =
