@@ -36,6 +36,7 @@ module Cardano.Wallet.API.V1.Types (
   , WalletId (..)
   , WalletOperation (..)
   , SpendingPassword
+  , WalletName
   -- * Addresses
   , AddressValidity (..)
   -- * Accounts

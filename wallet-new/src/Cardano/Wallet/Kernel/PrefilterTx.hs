@@ -8,6 +8,7 @@ module Cardano.Wallet.Kernel.PrefilterTx
        , AddrWithId
        , prefilterBlock
        , prefilterUtxo
+       , WalletKey
        ) where
 
 import           Universum
