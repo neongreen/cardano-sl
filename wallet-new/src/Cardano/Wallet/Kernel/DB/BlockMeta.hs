@@ -53,14 +53,6 @@ makeLenses ''BlockMeta
 deriveSafeCopy 1 'base ''AddressMeta
 deriveSafeCopy 1 'base ''BlockMeta
 
-instance SafeCopy (InDb AddressMeta) where
-    getCopy = contain (fmap InDb safeGet)
-    putCopy (InDb x) = contain (safePut x)
-
-instance SafeCopy (InDb BlockMeta) where
-    getCopy = contain (fmap InDb safeGet)
-    putCopy (InDb x) = contain (safePut x)
-
 instance Semigroup AddressMeta where
   a <> b = mergeAddrMeta a b
     where
