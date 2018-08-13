@@ -116,6 +116,11 @@ prop_TestChain (TestChain chain) = validChain chain
 data ChainUpdate = AddBlock   Block
                  | SwitchFork Int     -- rollback by n
                               [Block] -- add more blocks
+                                      -- TODO (@coot): I think we should also
+                                      -- say the tip from which switch the fork.
+                                      -- It may happend that the client tip will
+                                      -- change (by listening to another
+                                      -- producer).
   deriving Show
 
 -- This is the key operation on chains in this model
@@ -491,8 +496,12 @@ initialiseReader pointReader pointIntersection (ChainProducerState cs rs)
 freshReaderId :: ReaderStates -> ReaderId
 freshReaderId rs = 1 + maximum [ readerId | ReaderState{readerId} <- rs ]
 
-lookupReader :: ChainProducerState -> ReaderId -> ReaderState
-lookupReader cps rid = undefined
+lookupReader :: ChainProducerState -> ReaderId -> Maybe ReaderState
+lookupReader (ChainProducerState _ rs) rid = go rs
+    where
+    go [] = Nothing
+    go (rs@ReaderState{readerId}:rs') | readerId == rid = Just rs
+                                      | otherwise       = go rs'
 
 readerInstruction :: ChainProducerState
                   -> ReaderId -> Maybe (ChainProducerState, ConsumeChain Block)
