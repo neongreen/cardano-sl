@@ -263,20 +263,49 @@ invVolatile (Volatile blocks (Just tip)) =
 
 chainBackwardsFrom :: Map BlockId (Block, Maybe BlockId)
                    -> BlockId
-                   -> [Block]
+                   -> [Block] -- ^ newest first
 chainBackwardsFrom blocks bid =
     case Map.lookup bid blocks of
       Nothing    -> []
       Just (b,_) -> b : chainBackwardsFrom blocks (prevBlockId b)
 
+chainBackwardsFromTo
+    :: Map BlockId (Block, Maybe BlockId)
+    -> BlockId
+    -- ^ from
+    -> BlockId
+    -- ^ to
+    -> Maybe [Block]
+    -- ^ newest first, it is guaranteed that the list ends on the block after
+    -- @toBid@ block
+chainBackwardsFromTo blocks fromBid toBid =
+    case Map.lookup fromBid blocks of
+        Nothing -> Nothing
+        Just (b, _)
+            | blockId b == toBid
+                -> Just []
+            | otherwise
+                -> fmap (b :) $ chainBackwardsFromTo blocks (prevBlockId b) toBid
+
 chainBackwardsFrom' :: Map BlockId (Block, Maybe BlockId)
                     -> BlockId
-                    -> [(Block, Maybe BlockId)]
+                    -> [(Block, Maybe BlockId)] -- ^ newest first
 chainBackwardsFrom' blocks bid =
     case Map.lookup bid blocks of
       Nothing      -> []
       Just e@(b,_) -> e : chainBackwardsFrom' blocks (prevBlockId b)
 
+
+chainForwardFrom :: Map BlockId (Block, Maybe BlockId)
+                 -> BlockId
+                 -> [Block] -- ^ oldest first
+chainForwardFrom blocks blockId = go blockId id
+    where
+    go :: BlockId -> ([Block] -> r) -> r
+    go bid k = case Map.lookup bid blocks of
+        Nothing                 -> k []
+        Just (block, Nothing)   -> k [block]
+        Just (block, Just bid') -> go bid' (k . (block :))
 
 --
 -- The abstraction function
@@ -353,6 +382,9 @@ switchForkVolatile :: Int -> [Block] -> Volatile -> Volatile
 switchForkVolatile _rollback _newblocks (Volatile _ Nothing) =
     error "switchForkVolatile: precondition violation"
 
+-- TODO: perhaps we shouldn't remove blocks too eagerly or maybe we should have
+-- a cache of blocks at some level so we don't need to redownload in case of two
+-- competing tines.
 switchForkVolatile rollback newblocks (Volatile blocks (Just tip)) =
     Volatile blocks' (Just tip')
   where
@@ -428,6 +460,8 @@ data ReaderState  = ReaderState {
      }
   deriving (Eq, Show)
 
+blockPoint :: Block -> Point
+blockPoint b = (blockSlot b, blockId b)
 
 invChainProducerState :: ChainProducerState -> Bool
 invChainProducerState (ChainProducerState cs rs) =
@@ -496,16 +530,98 @@ initialiseReader pointReader pointIntersection (ChainProducerState cs rs)
 freshReaderId :: ReaderStates -> ReaderId
 freshReaderId rs = 1 + maximum [ readerId | ReaderState{readerId} <- rs ]
 
-lookupReader :: ChainProducerState -> ReaderId -> Maybe ReaderState
-lookupReader (ChainProducerState _ rs) rid = go rs
+lookupReader :: ReaderStates -> ReaderId -> Maybe ReaderState
+lookupReader rs rid = go rs
     where
     go [] = Nothing
     go (rs@ReaderState{readerId}:rs') | readerId == rid = Just rs
                                       | otherwise       = go rs'
 
-readerInstruction :: ChainProducerState
-                  -> ReaderId -> Maybe (ChainProducerState, ConsumeChain Block)
-readerInstruction cps rid = undefined
+readerInstructions
+    :: ChainProducerState
+    -> ReaderId
+    -> Maybe [ConsumeChain Block]
+readerInstructions (ChainProducerState (ChainState (Volatile blocks _)) crs) rid = do
+    ReaderState{readerIntersection, readerHead} <- lookupReader crs rid
+    let ccs = map RollForward $ chainForwardFrom blocks (snd readerHead)
+    if readerIntersection == readerHead
+        then Just ccs
+        else do
+            bs <- chainBackwardsFromTo blocks (snd readerHead) (snd readerIntersection)
+            Just $ (fmap (RollBackward . blockPoint) bs) ++ ccs
+
+-- |
+-- Rollback pointers if we are switching to another tine (which will remove
+-- blocks from volatile fork).
+-- This function must be run before `switchForkVolatile` otherwise we will loose
+-- pointers.
+--
+-- Assumptions:
+--  * rollback should be shallower than the length of the longest tine,
+--    otherewise pointers might get out of range
+normalizeChainProducerState
+    :: ChainUpdate
+    -> ChainProducerState
+    -> ChainProducerState
+normalizeChainProducerState (AddBlock _) cps = cps
+normalizeChainProducerState _ (ChainProducerState {chainState=ChainState (Volatile _ Nothing)})
+    = error "normalizeChainState: precondition validation"
+normalizeChainProducerState
+    (SwitchFork n _)
+    (cps@ChainProducerState
+        { chainState   = cs@(ChainState (Volatile blocks (Just tip)))
+        , chainReaders = rs
+        })
+    = case take (n + 1) $ chainBackwardsFrom blocks tip of
+        [] -> cps
+        bs ->
+            let nextTip  = last bs
+                newPoint = (blockSlot nextTip, blockId nextTip)
+            in ChainProducerState
+                { chainState   = cs
+                , chainReaders = foldl' (updateReaderStates newPoint) rs (init bs)
+                }
+    where
+    updatePointer
+        :: Block -- ^ block which will be rolled back
+        -> Point -- ^ new point
+        -> Point -- ^ current point
+        -> Point -- ^ updated point
+    updatePointer b n o =
+        if (blockSlot b, blockId b) == o
+            then n
+            else o
+
+    updateReaderStates :: Point -> [ReaderState] -> Block -> [ReaderState]
+    updateReaderStates p rs b = map (updateReaderState p b) rs
+
+    updateReaderState :: Point -> Block -> ReaderState -> ReaderState
+    updateReaderState p b ReaderState {readerIntersection, readerHead, readerId}
+        = ReaderState
+            { readerIntersection = updatePointer b p readerIntersection
+            , readerHead = updatePointer b p readerHead
+            , readerId
+            }
+
+applyChainProducerUpdate :: ChainUpdate -> ChainProducerState -> ChainProducerState
+applyChainProducerUpdate cu (cps@ChainProducerState {chainState, chainReaders})
+    = (normalizeChainProducerState cu cps) { chainState = applyChainStateUpdate cu chainState }
+
+invApplyChainProducerUpdate :: ChainUpdate -> ChainProducerState ->  Bool
+invApplyChainProducerUpdate cu cps = case applyChainProducerUpdate cu cps of
+    ChainProducerState
+        { chainState    = ChainState (Volatile blocks _)
+        , chainReaders
+        } -> and
+            [
+              -- all pointers should be still in volatile chain
+              and [ Map.member intersectionBlockId blocks && Map.member readerBlockId blocks
+                  | ReaderState
+                      { readerIntersection = (_, intersectionBlockId)
+                      , readerHead         = (_, readerBlockId)
+                      } <- chainReaders
+                  ]
+            ]
 
 data ConsumeChain block = RollForward  block
                         | RollBackward Point
