@@ -31,6 +31,7 @@ import           Cardano.Wallet.Kernel.Decrypt (eskToWalletDecrCredentials)
 import           Cardano.Wallet.Kernel.Restore (restoreWalletBalance,
                      restoreWalletHistory)
 import           Cardano.Wallet.Kernel.Types (WalletId (..))
+import           Cardano.Wallet.Kernel.Util.Core (getCurrentTimestamp)
 import qualified Cardano.Wallet.Kernel.Wallets as Kernel
 import           Cardano.Wallet.WalletLayer (CreateWalletError (..),
                      DeleteWalletError (..), GetWalletError (..),
@@ -49,10 +50,10 @@ createWallet wallet
                v1WalletName
                operation) = liftIO $ do
     case operation of
-      V1.RestoreWallet -> error "Not implemented, see [CBR-243]."
-      V1.CreateWallet  -> create
+      V1.RestoreWallet -> restore
+      V1.CreateWallet  -> snd <$> create
   where
-    create :: IO (Either CreateWalletError V1.Wallet)
+    create :: IO (Either CreateWalletError (HD.HdRoot, V1.Wallet))
     create = runExceptT $ do
       now  <- liftIO getCurrentTimestamp
       root <- withExceptT CreateWalletError $ ExceptT $
@@ -71,7 +72,23 @@ createWallet wallet
 
     restore :: IO (Either CreateWalletError V1.Wallet)
     restore = runExceptT $ do
-        return (error "MN TODO")
+        (root, result) <- create
+
+        let esk = snd $ safeDeterministicKeyGen (BIP39.mnemonicToSeed mnemonic)
+                                                spendingPassword
+            wdc = eskToWalletDecrCredentials esk
+
+        -- Synchronously restore the wallet balance.
+        -- TODO (@mn): and what should happen if the restoration was interrupted here,
+        --             before restoring the balance?
+        coins <- liftIO $ restoreWalletBalance wallet wdc
+
+        -- Begin to asynchronously reconstruct the wallet's history.
+        progress <- restoreWalletHistory wallet root
+
+        -- Return the wallet information, with an updated balance.
+        return (result { V1.walBalance   = V1 coins
+                       , V1.walSyncState = progress })
 
     mkRoot :: Timestamp -> HD.HdRoot -> HD.HdAccount -> V1.Wallet
     mkRoot now hdRoot _acc = V1.Wallet {
@@ -95,56 +112,6 @@ createWallet wallet
 
     spendingPassword = maybe emptyPassphrase coerce mbSpendingPassword
     hdAssuranceLevel = fromAssuranceLevel v1AssuranceLevel
-{-
-createWallet wallet (V1.NewWallet (V1.BackupPhrase mnemonic) mbSpendingPassword v1AssuranceLevel v1WalletName operation) =
-    liftIO $ limitExecutionTimeTo (30 :: Second) CreateWalletTimeLimitReached $ do
-
-        let hdAssuranceLevel = case v1AssuranceLevel of
-                V1.NormalAssurance -> HD.AssuranceLevelNormal
-                V1.StrictAssurance -> HD.AssuranceLevelStrict
-            spendingPassword = maybe emptyPassphrase coerce mbSpendingPassword
-
-        res <- liftIO $ Kernel.createHdWallet wallet
-                                              mnemonic
-                                              spendingPassword
-                                              hdAssuranceLevel
-                                              (HD.WalletName v1WalletName)
-        case res of
-            Left kernelError ->
-              return (Left $ CreateWalletError kernelError)
-            Right hdRoot -> do
-                let rootId = hdRoot ^. HD.hdRootId
-                    wId    = WalletIdHdRnd rootId
-                -- Populate this wallet with an account by default
-                newAccount <- liftIO $ Kernel.createAccount spendingPassword
-                                                            (HD.AccountName "Default account")
-                                                            wId
-                                                            wallet
-                case newAccount of
-                    Left accCreationFailed ->
-                        return (Left $ CreateWalletFirstAccountCreationFailed accCreationFailed)
-                    Right _ -> Right <$> case operation of
-                        V1.RestoreWallet -> do
-                            -- Synchronously restore the wallet balance.
-                            -- TODO (@mn): and what should happen if the restoration was
-                            -- interrupted here, before restoring the balance?
-                            let esk = snd $ safeDeterministicKeyGen (BIP39.mnemonicToSeed mnemonic)
-                                                                    spendingPassword
-                                wdc = eskToWalletDecrCredentials esk
-                            coins <- restoreWalletBalance wallet wdc
-                            -- Begin to asychronously reconstruct the wallet history.
-                            _ <- link =<< async (restoreWalletHistory wallet hdRoot)
-
-                            -- Grab a snapshot of new wallet and update it with the
-                            -- total balance.
-                            snapshot <- Kernel.getWalletSnapshot wallet
-                            return (toV1Wallet snapshot hdRoot) { V1.walBalance = V1 coins }
-
-                        V1.CreateWallet -> do
-                            -- Grab a snapshot of new wallet
-                            snapshot <- Kernel.getWalletSnapshot wallet
-                            return (toV1Wallet snapshot hdRoot)
--}
 
 -- | Updates the 'SpendingPassword' for this wallet.
 updateWallet :: MonadIO m
