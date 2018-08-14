@@ -38,7 +38,7 @@ import           Test.QuickCheck.Monadic (assert, pick)
 
 import           Pos.Chain.Block (Blund, LastKnownHeaderTag, blockHeader,
                      headerHashG)
-import           Pos.Chain.Txp (TxpConfiguration, Utxo)
+import           Pos.Chain.Txp (TxpConfiguration, Utxo, tcRequiresNetworkMagic)
 import           Pos.Client.KeyStorage (getSecretKeysPlain)
 import           Pos.Client.Txp.Balances (getBalance)
 import           Pos.Core (Address, BlockCount, Coin, HasConfiguration,
@@ -83,7 +83,7 @@ wpGenBlocks
     -> InplaceDB
     -> WalletProperty (OldestFirst [] Blund)
 wpGenBlocks pm txpConfig blkCnt enTxPayload inplaceDB = do
-    params <- genBlockGenParams pm (tcRequiresNetworkMagic) blkCnt
+    params <- genBlockGenParams pm (tcRequiresNetworkMagic txpConfig) blkCnt
                                 enTxPayload inplaceDB
     g <- pick $ MkGen $ \qc _ -> qc
     lift $ modifyStateLock HighPriority ApplyBlock $ \prevTip -> do -- FIXME is ApplyBlock the right one?

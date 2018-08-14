@@ -63,13 +63,18 @@ deriving instance Eq CTx
 -- TODO remove HasCompileInfo when MonadWalletWebMode will be splitted.
 spec :: Spec
 spec = do
-       requiresNetworkMagic <- pick arbitrary
-       withCompileInfo $
-       withDefConfigurations requiresNetworkMagic $ \_ txpConfig _ ->
-       describe "Wallet.Web.Methods.Payment" $ modifyMaxSuccess (const 10) $ do
-    describe "newPaymentBatch" $ do
-        describe "Submitting a payment when restoring" (rejectPaymentIfRestoringSpec txpConfig)
-        describe "One payment" (oneNewPaymentBatchSpec txpConfig)
+    runWithNetworkMagic True
+    runWithNetworkMagic False
+
+runWithNetworkMagic :: Bool -> Spec
+runWithNetworkMagic requiresNetworkMagic = withCompileInfo $
+    withDefConfigurations requiresNetworkMagic $ \_ txpConfig _ ->
+        describe ("Wallet.Web.Methods.Payment (requiresNetworkMagic="
+                       <> show requiresNetworkMagic
+                       <> ")") $ modifyMaxSuccess (const 10) $ do
+            describe "newPaymentBatch" $ do
+                describe "Submitting a payment when restoring" (rejectPaymentIfRestoringSpec txpConfig)
+                describe "One payment" (oneNewPaymentBatchSpec txpConfig)
 
 data PaymentFixture = PaymentFixture {
       pswd        :: PassPhrase

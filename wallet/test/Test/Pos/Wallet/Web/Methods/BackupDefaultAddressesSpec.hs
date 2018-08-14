@@ -27,9 +27,10 @@ spec = do
 runWithNetworkMagic :: Bool -> Spec
 runWithNetworkMagic requiresNetworkMagic = do
     withDefConfigurations requiresNetworkMagic $ \_ _ _ ->
-    describe ("restoreAddressFromWalletBackup (" <> show requiresNetworkMagic
-                  <> ")") $ modifyMaxSuccess (const 10) $ do
-        restoreWalletAddressFromBackupSpec
+        describe ("restoreAddressFromWalletBackup (requiresNetworkMagic="
+                      <> show requiresNetworkMagic
+                      <> ")") $ modifyMaxSuccess (const 10) $ do
+            restoreWalletAddressFromBackupSpec
 
 restoreWalletAddressFromBackupSpec :: HasConfigurations => Spec
 restoreWalletAddressFromBackupSpec =

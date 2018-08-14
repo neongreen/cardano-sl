@@ -42,13 +42,13 @@ spec = do
 runWithNetworkMagic :: Bool -> Spec
 runWithNetworkMagic requiresNetworkMagic = do
     withDefConfigurations requiresNetworkMagic $ \_ _ _ ->
-    describe ("Fake address has maximal possible size (requiresNetworkMagic="
-                   <> show requiresNetworkMagic <> ")") $
-        modifyMaxSuccess (const 10) $ do
-            prop "getNewAddress" $
-                fakeAddressHasMaxSizeTest changeAddressGenerator
-            prop "genUniqueAddress" $
-                fakeAddressHasMaxSizeTest commonAddressGenerator
+        describe ("Fake address has maximal possible size (requiresNetworkMagic="
+                       <> show requiresNetworkMagic <> ")") $
+            modifyMaxSuccess (const 10) $ do
+                prop "getNewAddress" $
+                    fakeAddressHasMaxSizeTest changeAddressGenerator
+                prop "genUniqueAddress" $
+                    fakeAddressHasMaxSizeTest commonAddressGenerator
 
 type AddressGenerator = AccountId -> PassPhrase -> WalletProperty Address
 

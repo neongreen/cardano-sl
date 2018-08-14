@@ -53,14 +53,16 @@ spec = do
     runWithNetworkMagic False
 
 runWithNetworkMagic :: Bool -> Spec
-runWithNetworkMagic requiresNetworkMagic = do
+runWithNetworkMagic requiresNetworkMagic =
     withDefConfigurations requiresNetworkMagic $ \_ _ _ -> do
-    describe ("Pos.Wallet.Web.Tracking.BListener" <> show requiresNetworkMagic
-                   <> ")") $ modifyMaxSuccess (const 10) $ do
-        describe "Two applications and rollbacks" twoApplyTwoRollbacksSpec
-    xdescribe "Pos.Wallet.Web.Tracking.evalChange (pending, CSL-2473)" $ do
-        prop evalChangeDiffAccountsDesc evalChangeDiffAccounts
-        prop evalChangeSameAccountsDesc evalChangeSameAccounts
+        describe ("Pos.Wallet.Web.Tracking.BListener (requiresNetworkMagic="
+                       <> show requiresNetworkMagic
+                       <> ")") $ modifyMaxSuccess (const 10) $ do
+            describe "Two applications and rollbacks" twoApplyTwoRollbacksSpec
+        xdescribe ("Pos.Wallet.Web.Tracking.evalChange (pending, CSL-2473)\
+                  \ (" <> show requiresNetworkMagic <> ")") $ do
+            prop evalChangeDiffAccountsDesc evalChangeDiffAccounts
+            prop evalChangeSameAccountsDesc evalChangeSameAccounts
   where
     evalChangeDiffAccountsDesc =
       "An outgoing transaction to another account."
