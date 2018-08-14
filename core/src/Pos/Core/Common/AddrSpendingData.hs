@@ -130,9 +130,9 @@ instance Bi AddrType where
 addrSpendingDataToType :: AddrSpendingData -> AddrType
 addrSpendingDataToType =
     \case
-        PubKeyASD {} -> ATPubKey
-        ScriptASD {} -> ATScript
-        RedeemASD {} -> ATRedeem
+        PubKeyASD _ -> ATPubKey
+        ScriptASD _ -> ATScript
+        RedeemASD _ -> ATRedeem
         UnknownASD tag _ -> ATUnknown tag
 
 

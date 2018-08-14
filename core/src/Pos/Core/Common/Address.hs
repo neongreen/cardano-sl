@@ -1,3 +1,5 @@
+{-# LANGUAGE RecordWildCards #-}
+
 -- | Functionality related to 'Address' data type and related types.
 
 module Pos.Core.Common.Address
@@ -390,8 +392,8 @@ isRedeemAddress Address {..} =
 isUnknownAddressType :: Address -> Bool
 isUnknownAddressType Address {..} =
     case addrType of
-        ATUnknown {} -> True
-        _            -> False
+        ATUnknown _ -> True
+        _           -> False
 
 -- | Check whether an 'Address' has bootstrap era stake distribution.
 isBootstrapEraDistrAddress :: Address -> Bool
