@@ -28,6 +28,8 @@ module Cardano.Wallet.Kernel.DB.AcidState (
     -- *** DELETE
   , DeleteHdRoot(..)
   , DeleteHdAccount(..)
+    -- * Updates on checkpoints
+  , UpdateCurrentCheckpointUtxo(..)
     -- *** Testing
   , ObservableRollbackUseInTestsOnly(..)
     -- * Errors
@@ -38,6 +40,7 @@ module Cardano.Wallet.Kernel.DB.AcidState (
 
 import           Universum
 
+import           Control.Lens ((%=))
 import           Control.Lens.TH (makeLenses)
 import           Control.Monad.Except (MonadError, catchError)
 import           Data.Acid (Query, Update, makeAcidic)
@@ -47,9 +50,10 @@ import           Formatting (bprint, build, (%))
 import qualified Formatting.Buildable
 import           Test.QuickCheck (Arbitrary (..), oneof)
 
-import           Pos.Chain.Txp (Utxo)
+import           Pos.Chain.Txp (Utxo, UtxoModifier, getTotalCoinsInUtxo)
 import           Pos.Core.Chrono (OldestFirst (..))
 import qualified Pos.Core.Txp as Txp
+import qualified Pos.Util.Modifier as MM
 
 import           Cardano.Wallet.Kernel.ChainState
 import           Cardano.Wallet.Kernel.DB.BlockMeta
@@ -441,6 +445,21 @@ deleteHdAccount accId = runUpdateDiscardSnapshot . zoom dbHdWallets $
     HD.deleteHdAccount accId
 
 {-------------------------------------------------------------------------------
+  Checkpoints
+-------------------------------------------------------------------------------}
+
+updateCurrentCheckpointUtxo :: UtxoModifier -> Update DB ()
+updateCurrentCheckpointUtxo umod = runUpdateNoErrors $
+    zoomAll (dbHdWallets . hdWalletsAccounts) $
+        hdAccountState . hdAccountStateCurrent %= checkpointUtxoModify umod
+
+checkpointUtxoModify :: IsCheckpoint cp => UtxoModifier -> cp -> cp
+checkpointUtxoModify umod c =
+  let utxo = MM.modifyMap umod (c ^. cpUtxo)
+  in c & cpUtxo        .~ utxo
+       & cpUtxoBalance .~ getTotalCoinsInUtxo utxo
+
+{-------------------------------------------------------------------------------
   Acid-state magic
 -------------------------------------------------------------------------------}
 
@@ -469,6 +488,8 @@ makeAcidic ''DB [
     , 'updateHdAccountName
     , 'deleteHdRoot
     , 'deleteHdAccount
+      -- Updates on checkpoints
+    , 'updateCurrentCheckpointUtxo
       -- Testing
     , 'observableRollbackUseInTestsOnly
     ]

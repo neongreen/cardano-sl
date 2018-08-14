@@ -123,22 +123,27 @@ createWallet wallet (V1.NewWallet (V1.BackupPhrase mnemonic) mbSpendingPassword 
                 case newAccount of
                     Left accCreationFailed ->
                         return (Left $ CreateWalletFirstAccountCreationFailed accCreationFailed)
-                    Right _ -> do
-                        when (operation == V1.RestoreWallet) $ do
+                    Right _ -> Right <$> case operation of
+                        V1.RestoreWallet -> do
                             -- Synchronously restore the wallet balance.
-                            -- TODO (@mn): and what should happen if the restoration was interrupted here,
-                            --             before restoring the balance? I suppose the user could just restore again,
-                            --             but there would be no indication that the
-                            let (_,esk) = safeDeterministicKeyGen (BIP39.mnemonicToSeed mnemonic) spendingPassword
+                            -- TODO (@mn): and what should happen if the restoration was
+                            -- interrupted here, before restoring the balance?
+                            let esk = snd $ safeDeterministicKeyGen (BIP39.mnemonicToSeed mnemonic)
+                                                                    spendingPassword
                                 wdc = eskToWalletDecrCredentials esk
-                            restoreWalletBalance wallet hdRoot (wId, wdc)
+                            coins <- restoreWalletBalance wallet wdc
                             -- Begin to asychronously reconstruct the wallet history.
                             _ <- link =<< async (restoreWalletHistory wallet hdRoot)
-                            return ()
 
-                        -- Grab a snapshot of new wallet
-                        snapshot <- Kernel.getWalletSnapshot wallet
-                        return (Right $ toV1Wallet snapshot hdRoot)
+                            -- Grab a snapshot of new wallet and update it with the
+                            -- total balance.
+                            snapshot <- Kernel.getWalletSnapshot wallet
+                            return (toV1Wallet snapshot hdRoot) { V1.walBalance = V1 coins }
+
+                        V1.CreateWallet -> do
+                            -- Grab a snapshot of new wallet
+                            snapshot <- Kernel.getWalletSnapshot wallet
+                            return (toV1Wallet snapshot hdRoot)
 -}
 
 -- | Updates the 'SpendingPassword' for this wallet.

@@ -5,25 +5,30 @@ module Cardano.Wallet.Kernel.Restore
 
 import           Universum
 
+import           Data.Acid (update)
 import           Pos.Core.Txp (toaOut, txOutAddress)
 
 import qualified Cardano.Wallet.Kernel as Kernel
+import           Cardano.Wallet.Kernel.DB.AcidState
+                     (UpdateCurrentCheckpointUtxo (..))
 import qualified Cardano.Wallet.Kernel.DB.HdWallet as HD
-import           Cardano.Wallet.Kernel.Internal (walletNode)
+import           Cardano.Wallet.Kernel.Internal (walletNode, wallets)
 import           Cardano.Wallet.Kernel.NodeStateAdaptor (withNodeState)
 
-import           Cardano.Wallet.Kernel.Decrypt (decryptAddress)
-import           Cardano.Wallet.Kernel.PrefilterTx (WalletKey)
+import           Cardano.Wallet.Kernel.Decrypt (WalletDecrCredentials,
+                     decryptAddress)
+import           Pos.Chain.Txp (getTotalCoinsInUtxo, utxoToModifier)
+import           Pos.Core (Coin)
 import           Pos.DB.Txp.Utxo (filterUtxo)
 
-restoreWalletBalance :: Kernel.PassiveWallet -> HD.HdRoot -> WalletKey -> IO ()
-restoreWalletBalance wallet _hdRoot (_wId, wdc) =
-    withNodeState (wallet ^. walletNode) $ \_lock -> do
-        _utxo <- filterUtxo isWalletUtxo
-        return ()
-
+restoreWalletBalance :: Kernel.PassiveWallet -> WalletDecrCredentials -> IO Coin
+restoreWalletBalance wallet wdc = do
+    utxo <- withNodeState (wallet ^. walletNode) (\_lock -> filterUtxo mine)
+    update (wallet ^. wallets) (UpdateCurrentCheckpointUtxo (utxoToModifier utxo))
+    return (getTotalCoinsInUtxo utxo)
   where
-      isWalletUtxo = isJust . decryptAddress wdc . txOutAddress . toaOut . snd
+    mine = isJust . decryptAddress wdc . txOutAddress . toaOut . snd
+
 
 restoreWalletHistory :: Kernel.PassiveWallet -> HD.HdRoot -> IO ()
 restoreWalletHistory _wallet _hdRoot =
