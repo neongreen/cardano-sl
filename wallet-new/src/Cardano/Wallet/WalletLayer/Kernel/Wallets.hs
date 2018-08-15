@@ -74,6 +74,9 @@ createWallet wallet
     restore = runExceptT $ do
         (root, result) <- create
 
+        -- For each account in the wallet, set its state to restoring.
+        liftIO $ beginWalletRestoration wallet
+
         let esk = snd $ safeDeterministicKeyGen (BIP39.mnemonicToSeed mnemonic)
                                                 spendingPassword
             wdc = eskToWalletDecrCredentials esk

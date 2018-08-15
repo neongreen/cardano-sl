@@ -1,5 +1,6 @@
 module Cardano.Wallet.Kernel.Restore
-    ( restoreWalletBalance
+    ( beginWalletRestoration
+    , restoreWalletBalance
     , restoreWalletHistory
     ) where
 
@@ -25,6 +26,10 @@ import           Pos.Core (Coin)
 import           Pos.Core.Txp (toaOut, txOutAddress)
 import           Pos.DB.Txp.Utxo (filterUtxo)
 
+-- | Begin a wallet restoration by setting the sync state of all wallet accounts.
+beginWalletRestoration :: Kernel.PassiveWallet -> IO ()
+beginWalletRestoration _wallet = return ()
+
 -- | Scan the node's current UTXO set for any that belong to this wallet. Use them
 --   to update the current checkpoint's UTXO set, and return the total 'Coin' value
 --   of the UTXO belonging to this wallet.
@@ -36,8 +41,8 @@ restoreWalletBalance wallet wdc = do
   where
     mine = isJust . decryptAddress wdc . txOutAddress . toaOut . snd
 
--- | Start restoring the wallet history in the background, returning a best
---   estimate of the 'SyncProgress'.
+-- | Start restoring the wallet history in the background, returning a best-effort
+--   estimate of the initial 'SyncProgress'.
 restoreWalletHistory :: Kernel.PassiveWallet -> HD.HdRoot -> IO SyncProgress
 restoreWalletHistory wallet hdRoot = do
   link =<< async (restoreWalletHistoryAsync wallet hdRoot)
@@ -50,4 +55,6 @@ restoreWalletHistory wallet hdRoot = do
 -- | Restore a wallet's transaction history.
 restoreWalletHistoryAsync :: Kernel.PassiveWallet -> HD.HdRoot -> IO ()
 restoreWalletHistoryAsync _wallet _hdRoot = do
+    -- 1. Compute PartialCheckpoints using data from the node.
+    -- 2.
     return ()
