@@ -8,6 +8,7 @@ module Cardano.Wallet.Kernel.PrefilterTx
        , AddrWithId
        , prefilterBlock
        , prefilterUtxo
+       , toHdAddressId
        , WalletKey
        ) where
 
@@ -208,16 +209,15 @@ prefilter :: WalletKey
      -> [(a, HdAddressId)]  -- ^ matching items
 prefilter (wid,wdc) selectAddr rtxs
     = map f $ selectOwnAddresses wdc selectAddr rtxs
-    where f (addr,meta) = (addr, toAddressId wid meta)
+    where f (addr,meta) = (addr, toHdAddressId wid meta)
 
-          toAddressId :: WalletId -> WAddressMeta -> HdAddressId
-          toAddressId (WalletIdHdRnd rootId) meta' = addressId
-              where
-                  accountIx = HdAccountIx (_wamAccountIndex meta')
-                  accountId = HdAccountId rootId accountIx
-
-                  addressIx = HdAddressIx (_wamAddressIndex meta')
-                  addressId = HdAddressId accountId addressIx
+-- TODO (@mn): move this into Util or something
+toHdAddressId :: WalletId -> WAddressMeta -> HdAddressId
+toHdAddressId (WalletIdHdRnd rootId) meta' = HdAddressId accountId addressIx
+  where
+    accountIx = HdAccountIx (_wamAccountIndex meta')
+    accountId = HdAccountId rootId accountIx
+    addressIx = HdAddressIx (_wamAddressIndex meta')
 
 extendWithSummary :: (Bool, Bool)
                   -- ^ Bools that indicate whether the inputs and outsputs are all "ours"

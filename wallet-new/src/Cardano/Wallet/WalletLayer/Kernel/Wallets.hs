@@ -28,8 +28,8 @@ import           Cardano.Wallet.Kernel.DB.Read (hdWallets)
 import           Cardano.Wallet.Kernel.DB.Util.IxSet (IxSet)
 import qualified Cardano.Wallet.Kernel.DB.Util.IxSet as IxSet
 import           Cardano.Wallet.Kernel.Decrypt (eskToWalletDecrCredentials)
-import           Cardano.Wallet.Kernel.Restore (restoreWalletBalance,
-                     restoreWalletHistory)
+import           Cardano.Wallet.Kernel.Restore (beginWalletRestoration,
+                     restoreWalletBalance, restoreWalletHistory)
 import           Cardano.Wallet.Kernel.Types (WalletId (..))
 import           Cardano.Wallet.Kernel.Util.Core (getCurrentTimestamp)
 import qualified Cardano.Wallet.Kernel.Wallets as Kernel
@@ -51,7 +51,7 @@ createWallet wallet
                operation) = liftIO $ do
     case operation of
       V1.RestoreWallet -> restore
-      V1.CreateWallet  -> snd <$> create
+      V1.CreateWallet  -> fmap snd <$> create
   where
     create :: IO (Either CreateWalletError (HD.HdRoot, V1.Wallet))
     create = runExceptT $ do
@@ -63,7 +63,7 @@ createWallet wallet
                                       hdAssuranceLevel
                                       (HD.WalletName v1WalletName)
       let rootId = root ^. HD.hdRootId
-      fmap (mkRoot now root) $
+      fmap ((root,) . mkRoot now root) $
         withExceptT CreateWalletFirstAccountCreationFailed $ ExceptT $
            Kernel.createAccount spendingPassword
                                 (HD.AccountName "Default account")
@@ -72,7 +72,7 @@ createWallet wallet
 
     restore :: IO (Either CreateWalletError V1.Wallet)
     restore = runExceptT $ do
-        (root, result) <- create
+        (root, result) <- ExceptT create
 
         -- For each account in the wallet, set its state to restoring.
         liftIO $ beginWalletRestoration wallet
@@ -80,14 +80,15 @@ createWallet wallet
         let esk = snd $ safeDeterministicKeyGen (BIP39.mnemonicToSeed mnemonic)
                                                 spendingPassword
             wdc = eskToWalletDecrCredentials esk
+            walletId = WalletIdHdRnd (root ^. HD.hdRootId)
 
         -- Synchronously restore the wallet balance.
         -- TODO (@mn): and what should happen if the restoration was interrupted here,
         --             before restoring the balance?
-        coins <- liftIO $ restoreWalletBalance wallet wdc
+        coins <- liftIO $ restoreWalletBalance wallet (walletId, wdc)
 
         -- Begin to asynchronously reconstruct the wallet's history.
-        progress <- restoreWalletHistory wallet root
+        progress <- liftIO $ restoreWalletHistory wallet root
 
         -- Return the wallet information, with an updated balance.
         return (result { V1.walBalance   = V1 coins
