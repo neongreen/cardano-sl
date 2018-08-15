@@ -1,14 +1,14 @@
 {-# LANGUAGE RecordWildCards, NamedFieldPuns #-}
 module ChainExperiment2 where
 
-import Data.Word
+-- import Data.Word
 import Data.List (foldl', intersect, tails)
 import Data.Hashable
 import qualified Data.Map as Map
 import           Data.Map (Map)
 import           Data.Maybe (fromMaybe)
 
-import Control.Applicative
+-- import Control.Applicative
 
 import Test.QuickCheck
 
@@ -356,7 +356,7 @@ addBlockVolatile b' (Volatile blocks (Just tip))
   where
     tip'    = blockId b'
     blocks' = Map.insert tip' (b', Nothing)
-            . Map.adjust (\(b, Nothing) -> (b, Just tip')) tip
+            . Map.adjust (\(b, _) -> (b, Just tip')) tip
             $ blocks
 
 -- | For building a chain from empty using the 'addBlock', at each step
@@ -549,7 +549,7 @@ readerInstructions (ChainProducerState (ChainState (Volatile blocks _)) crs) rid
         then Just ccs
         else do
             bs <- chainBackwardsFromTo blocks (snd readerHead) (snd readerIntersection)
-            Just $ (fmap (RollBackward . blockPoint) bs) ++ ccs
+            Just $ map (RollBackward . blockPoint) bs ++ ccs
 
 -- |
 -- Rollback pointers if we are switching to another tine (which will remove
@@ -600,12 +600,12 @@ normalizeChainProducerState
     updateReaderState p b ReaderState {readerIntersection, readerHead, readerId}
         = ReaderState
             { readerIntersection = updatePointer b p readerIntersection
-            , readerHead = updatePointer b p readerHead
+            , readerHead         = updatePointer b p readerHead
             , readerId
             }
 
 applyChainProducerUpdate :: ChainUpdate -> ChainProducerState -> ChainProducerState
-applyChainProducerUpdate cu (cps@ChainProducerState {chainState, chainReaders})
+applyChainProducerUpdate cu (cps@ChainProducerState {chainState})
     = (normalizeChainProducerState cu cps) { chainState = applyChainStateUpdate cu chainState }
 
 invApplyChainProducerUpdate :: ChainUpdate -> ChainProducerState ->  Bool

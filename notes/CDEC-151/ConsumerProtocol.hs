@@ -6,15 +6,13 @@
 {-# LANGUAGE TypeApplications #-}
 module ConsumerProtocol where
 
-import Data.Word
-import Data.Functor (($>))
-import Data.Functor.Const (Const)
-import Data.List (tails, foldl')
---import Data.Maybe
-import Data.Hashable
---import qualified Data.Set as Set
-import qualified Data.Map as Map
-import           Data.Map (Map)
+-- import Data.Word
+-- import Data.List (tails, foldl')
+-- import Data.Maybe
+-- import Data.Hashable
+-- import qualified Data.Set as Set
+-- import qualified Data.Map as Map
+-- import           Data.Map (Map)
 import           Data.PriorityQueue.FingerTree (PQueue)
 import qualified Data.PriorityQueue.FingerTree as PQueue
 import Data.Time (NominalDiffTime)
@@ -22,7 +20,7 @@ import Data.Time.Clock.POSIX (getPOSIXTime)
 import Data.Time.Units (Microsecond, toMicroseconds)
 import Data.Void (Void)
 
-import Control.Applicative
+-- import Control.Applicative
 import Control.Monad
 import Control.Monad.Free (Free (..))
 import Control.Monad.Free as Free
@@ -33,9 +31,9 @@ import Control.Exception (assert)
 import Control.Monad.ST.Lazy
 import Data.IORef (IORef, modifyIORef')
 import Data.STRef.Lazy
-import System.Random (StdGen, mkStdGen, randomR)
+import System.Random (StdGen, mkStdGen)
 
-import Test.QuickCheck
+-- import Test.QuickCheck
 
 import ChainExperiment2
 
@@ -158,7 +156,7 @@ consumerSideProtocol1 :: forall m.
                       -> (Point -> m ())
                       -> BiChan m MsgConsumer MsgProducer
                       -> m ()
-consumerSideProtocol1 addBlock rollbackTo chan =
+consumerSideProtocol1 addBlock _rollbackTo chan =
     --TODO: do the protocol initiation phase
     requestNext
   where
@@ -178,12 +176,12 @@ consumerSideProtocol1 addBlock rollbackTo chan =
       say ("ap blocks from point X to point Y")
       return ()
 
-    handleChainUpdate (MsgRollBackward p) = do
+    handleChainUpdate (MsgRollBackward _) = do
+      -- TODO: finish
       say ("rolling back N blocks from point X to point Y")
       return ()
 
-producerSideProtocol1 :: forall m.
-                         (MonadSendRecv m, MonadSay m)
+producerSideProtocol1 :: forall m. MonadSendRecv m
                       => (ReaderId -> m (Maybe (ConsumeChain Block)))
                       -> (ReaderId -> m (ConsumeChain Block))
                       -> ReaderId
@@ -226,7 +224,7 @@ producerSideProtocol1 tryReadChainUpdate readChainUpdate rid chan =
 -- | Given two sides of a protocol, ...
 --
 simulateWire
-  :: forall g p c s .
+  :: forall p c s .
      (SimChan s p c -> Free (SimF s) ())
   -> (SimChan s c p -> Free (SimF s) ())
   -> Free (SimF s) ()
@@ -329,6 +327,7 @@ instance MonadSendRecv (Free (SimF s)) where
 
 data SimChan s send recv = SimChan (SimMVar s send) (SimMVar s recv)
 
+flipSimChan :: SimChan s send recv -> SimChan s recv send
 flipSimChan (SimChan unichanAB unichanBA) = SimChan unichanBA unichanAB
 
 data SimState s = SimState {
@@ -386,7 +385,7 @@ schedule :: forall s . SimState s -> ST s Trace
 -- at least one runnable thread, run it one step
 schedule simstate@SimState {
            runqueue = Thread tid action:remaining,
-           curTime  = time, timers, prng
+           curTime  = time, timers
          } =
   case action of
 
@@ -599,8 +598,7 @@ example1 xs = do
       probeOutput p x
 
 example2
-  :: forall p c s .
-     TestChainAndUpdates
+  :: TestChainAndUpdates
   -> Free (SimF s) ()
 example2 (TestChainAndUpdates _c us) = do
     chainvar <- Free.liftF $ NewEmptyMVar id
