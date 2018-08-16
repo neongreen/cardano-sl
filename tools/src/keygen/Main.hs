@@ -17,11 +17,11 @@ import qualified Text.JSON.Canonical as CanonicalJSON
 
 import           Pos.Binary (asBinary, serialize')
 import qualified Pos.Client.CLI as CLI
-import           Pos.Core (CoreConfiguration (..), GenesisConfiguration (..),
-                     ProtocolMagic, addressHash, ccGenesis, coreConfiguration,
-                     vssMaxTTL)
-import           Pos.Core.Genesis (RichSecrets (..), generateFakeAvvm,
-                     generateRichSecrets)
+import           Pos.Core (Config (..), CoreConfiguration (..),
+                     GenesisConfiguration (..), ProtocolMagic, addressHash,
+                     ccGenesis, coreConfiguration, vssMaxTTL)
+import           Pos.Core.Genesis (GeneratedSecrets (..), RichSecrets (..),
+                     generateFakeAvvm, generateRichSecrets)
 import           Pos.Core.Ssc (mkVssCertificate, vcSigningKey)
 import           Pos.Crypto (EncryptedSecretKey (..), SecretKey (..),
                      VssKeyPair, fullPublicKeyF, hashHexF, noPassEncrypt,
@@ -121,13 +121,13 @@ dumpAvvmSeeds DumpAvvmSeedsOptions{..} = do
 
 generateKeysByGenesis
     :: (HasConfigurations, MonadIO m, WithLogger m, MonadThrow m)
-    => GenKeysOptions -> m ()
-generateKeysByGenesis GenKeysOptions{..} = do
+    => GeneratedSecrets -> GenKeysOptions -> m ()
+generateKeysByGenesis generatedSecrets GenKeysOptions{..} = do
     case ccGenesis coreConfiguration of
         GCSrc {} ->
             error $ "Launched source file conf"
         GCSpec {} -> do
-            dumpGeneratedGenesisData (gkoOutDir, gkoKeyPattern)
+            dumpGeneratedGenesisData generatedSecrets (gkoOutDir, gkoKeyPattern)
             logInfo (toText gkoOutDir <> " generated successfully")
 
 genVssCert
@@ -155,16 +155,23 @@ genVssCert pm path = do
 
 main :: IO ()
 main = do
-    KeygenOptions{..} <- getKeygenOptions
+    KeygenOptions {..} <- getKeygenOptions
     setupLogging Nothing $ productionB <> termSeveritiesOutB debugPlus
-    usingLoggerName "keygen" $ withConfigurations Nothing koConfigurationOptions $ \pm _ _ -> do
-        logInfo "Processing command"
-        case koCommand of
-            RearrangeMask msk       -> rearrange msk
-            GenerateKey path        -> genPrimaryKey path
-            GenerateVss path        -> genVssCert pm path
-            ReadKey path            -> readKey path
-            DumpAvvmSeeds opts      -> dumpAvvmSeeds opts
-            GenerateKeysBySpec gkbg -> generateKeysByGenesis gkbg
-            DumpGenesisData dgdPath dgdCanonical
-                                    -> CLI.dumpGenesisData dgdCanonical dgdPath
+    usingLoggerName "keygen"
+        $ withConfigurations Nothing koConfigurationOptions
+        $ \coreConfig _ _ -> do
+              logInfo "Processing command"
+              let generatedSecrets = fromMaybe
+                      (error "Main.main: GeneratedSecrets missing from config")
+                      (configGeneratedSecrets coreConfig)
+              case koCommand of
+                  RearrangeMask msk  -> rearrange msk
+                  GenerateKey   path -> genPrimaryKey path
+                  GenerateVss path ->
+                      genVssCert (configProtocolMagic coreConfig) path
+                  ReadKey       path -> readKey path
+                  DumpAvvmSeeds opts -> dumpAvvmSeeds opts
+                  GenerateKeysBySpec gkbg ->
+                      generateKeysByGenesis generatedSecrets gkbg
+                  DumpGenesisData dgdPath dgdCanonical ->
+                      CLI.dumpGenesisData dgdCanonical dgdPath

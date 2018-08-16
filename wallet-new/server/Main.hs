@@ -16,7 +16,8 @@ import           Pos.Chain.Ssc (SscParams)
 import           Pos.Chain.Txp (TxpConfiguration)
 import qualified Pos.Client.CLI as CLI
 import           Pos.Context (ncUserSecret)
-import           Pos.Core (epochSlots)
+import           Pos.Core (Config (..), epochSlots)
+import           Pos.Core.Genesis (GeneratedSecrets)
 import           Pos.Crypto (ProtocolMagic)
 import           Pos.DB.DB (initNodeDBs)
 import           Pos.DB.Txp (txpGlobalSettings)
@@ -168,25 +169,41 @@ actionWithNewWallet pm txpConfig sscParams nodeParams params =
         loggerName = lpDefaultName . bpLoggingParams . npBaseParams $ nodeParams
 
 -- | Runs an edge node plus its wallet backend API.
-startEdgeNode :: HasCompileInfo
-              => WalletStartupOptions
-              -> IO ()
+startEdgeNode :: HasCompileInfo => WalletStartupOptions -> IO ()
 startEdgeNode wso =
-  withConfigurations blPath conf $ \pm txpConfig ntpConfig -> do
-      (sscParams, nodeParams) <- getParameters txpConfig ntpConfig
-      case wsoWalletBackendParams wso of
-        WalletLegacy legacyParams ->
-          actionWithWallet pm txpConfig sscParams nodeParams ntpConfig legacyParams
-        WalletNew newParams ->
-          actionWithNewWallet pm txpConfig sscParams nodeParams newParams
+    withConfigurations blPath conf $ \coreConfig txpConfig ntpConfig -> do
+        let
+            generatedSecrets = fromMaybe
+                (error
+                    "Main.startEdgeNode: GeneratedSecrets missing from config"
+                )
+                (configGeneratedSecrets coreConfig)
+        (sscParams, nodeParams) <- getParameters generatedSecrets
+                                                 txpConfig
+                                                 ntpConfig
+        case wsoWalletBackendParams wso of
+            WalletLegacy legacyParams -> actionWithWallet
+                (configProtocolMagic coreConfig)
+                txpConfig
+                sscParams
+                nodeParams
+                ntpConfig
+                legacyParams
+            WalletNew newParams -> actionWithNewWallet
+                (configProtocolMagic coreConfig)
+                txpConfig
+                sscParams
+                nodeParams
+                newParams
   where
     getParameters :: HasConfigurations
-                  => TxpConfiguration
+                  => GeneratedSecrets
+                  -> TxpConfiguration
                   -> NtpConfiguration
                   -> IO (SscParams, NodeParams)
-    getParameters txpConfig ntpConfig = do
+    getParameters generatedSecrets txpConfig ntpConfig = do
 
-      currentParams <- CLI.getNodeParams defaultLoggerName (wsoNodeArgs wso) nodeArgs
+      currentParams <- CLI.getNodeParams defaultLoggerName (wsoNodeArgs wso) nodeArgs generatedSecrets
       let vssSK = fromJust $ npUserSecret currentParams ^. usVss
       let gtParams = CLI.gtSscParams (wsoNodeArgs wso) vssSK (npBehaviorConfig currentParams)
 

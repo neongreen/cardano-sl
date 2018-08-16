@@ -2,7 +2,8 @@
 {-# LANGUAGE RecordWildCards #-}
 
 module Pos.Core.Configuration
-       ( ConfigurationError (..)
+       ( Config (..)
+       , ConfigurationError (..)
        , HasConfiguration
        , withCoreConfigurations
        , withGenesisSpec
@@ -23,13 +24,12 @@ import qualified Text.JSON.Canonical as Canonical
 import           Pos.Binary.Class (Raw)
 import           Pos.Core.Configuration.BlockVersionData as E
 import           Pos.Core.Configuration.Core as E
-import           Pos.Core.Configuration.GeneratedSecrets as E
 import           Pos.Core.Configuration.GenesisData as E
 import           Pos.Core.Configuration.GenesisHash as E
 import           Pos.Core.Configuration.Protocol as E
-import           Pos.Core.Genesis (GenesisData (..), GenesisDelegation,
-                     GenesisInitializer (..), GenesisProtocolConstants (..),
-                     GenesisSpec (..),
+import           Pos.Core.Genesis (GeneratedSecrets, GenesisData (..),
+                     GenesisDelegation, GenesisInitializer (..),
+                     GenesisProtocolConstants (..), GenesisSpec (..),
                      genesisProtocolConstantsToProtocolConstants,
                      mkGenesisDelegation)
 import           Pos.Core.Genesis.Canonical (SchemaError)
@@ -40,12 +40,16 @@ import           Pos.Crypto.Configuration as E
 import           Pos.Crypto.Hashing (Hash, hashRaw, unsafeHash)
 import           Pos.Util.Util (leftToPanic)
 
+data Config = Config
+    { configProtocolMagic    :: ProtocolMagic
+    , configGeneratedSecrets :: Maybe GeneratedSecrets
+    }
+
 -- | Coarse catch-all configuration constraint for use by depending modules.
 type HasConfiguration =
     ( HasCoreConfiguration
     , HasGenesisData
     , HasGenesisHash
-    , HasGeneratedSecrets
     , HasGenesisBlockVersionData
     , HasProtocolConstants
     )
@@ -90,7 +94,7 @@ withCoreConfigurations
     -> Maybe Integer
     -- ^ Optional seed which overrides one from testnet initializer if
     -- provided.
-    -> (HasConfiguration => ProtocolMagic -> m r)
+    -> (HasConfiguration => Config -> m r)
     -> m r
 withCoreConfigurations conf@CoreConfiguration{..} fn confDir mSystemStart mSeed act = case ccGenesis of
     -- If a 'GenesisData' source file is given, we check its hash against the
@@ -123,8 +127,11 @@ withCoreConfigurations conf@CoreConfiguration{..} fn confDir mSystemStart mSeed 
             withGenesisBlockVersionData (gdBlockVersionData theGenesisData) $
             withGenesisData theGenesisData $
             withGenesisHash theGenesisHash $
-            withGeneratedSecrets Nothing $
-            act pm
+            act $
+            Config
+                { configProtocolMagic    = pm
+                , configGeneratedSecrets = Nothing
+                }
 
     -- If a 'GenesisSpec' is given, we ensure we have a start time (needed if
     -- it's a testnet initializer) and then make a 'GenesisData' from it.
@@ -153,7 +160,7 @@ withGenesisSpec
     :: Timestamp
     -> CoreConfiguration
     -> (GenesisData -> GenesisData)
-    -> (HasConfiguration => ProtocolMagic -> r)
+    -> (HasConfiguration => Config -> r)
     -> r
 withGenesisSpec theSystemStart conf@CoreConfiguration{..} fn val = case ccGenesis of
     GCSrc {} -> error "withGenesisSpec called with GCSrc"
@@ -189,8 +196,12 @@ withGenesisSpec theSystemStart conf@CoreConfiguration{..} fn val = case ccGenesi
                 theGenesisHash = unsafeHash @Text "patak"
              in withCoreConfiguration conf $
                   withGenesisHash theGenesisHash $
-                  withGeneratedSecrets (Just ggdSecrets) $
-                  withGenesisData theGenesisData $ val pm
+                  withGenesisData theGenesisData $
+                  val $
+                  Config
+                      { configProtocolMagic    = pm
+                      , configGeneratedSecrets = Just ggdSecrets
+                      }
       where
         pm = gpcProtocolMagic (gsProtocolConstants spec)
         pc = genesisProtocolConstantsToProtocolConstants (gsProtocolConstants spec)

@@ -21,7 +21,7 @@ import           Options.Generic (getRecord)
 import           Pos.Chain.Txp (TxpConfiguration)
 import           Pos.Client.CLI (CommonArgs (..), CommonNodeArgs (..),
                      NodeArgs (..), getNodeParams, gtSscParams)
-import           Pos.Core (ProtocolMagic, Timestamp (..), epochSlots)
+import           Pos.Core as Core (Config (..), Timestamp (..), epochSlots)
 import           Pos.DB.DB (initNodeDBs)
 import           Pos.DB.Rocks.Functions (openNodeDBs)
 import           Pos.DB.Rocks.Types (NodeDBs)
@@ -62,14 +62,14 @@ defaultNetworkConfig ncTopology = NetworkConfig {
 
 newRealModeContext
     :: HasConfigurations
-    => ProtocolMagic
+    => Core.Config
     -> TxpConfiguration
     -> NodeDBs
     -> ConfigurationOptions
     -> FilePath
     -> FilePath
     -> IO (RealModeContext ())
-newRealModeContext pm txpConfig dbs confOpts publicKeyPath secretKeyPath = do
+newRealModeContext coreConfig txpConfig dbs confOpts publicKeyPath secretKeyPath = do
     let nodeArgs = NodeArgs {
       behaviorConfigPath = Nothing
     }
@@ -108,7 +108,7 @@ newRealModeContext pm txpConfig dbs confOpts publicKeyPath secretKeyPath = do
          , cnaDumpConfiguration   = False
          }
     loggerName <- askLoggerName
-    nodeParams <- getNodeParams loggerName cArgs nodeArgs
+    nodeParams <- getNodeParams loggerName cArgs nodeArgs generatedSecrets
     let vssSK = fromJust $ npUserSecret nodeParams ^. usVss
     let gtParams = gtSscParams cArgs vssSK (npBehaviorConfig nodeParams)
     bracketNodeResources @() nodeParams gtParams (txpGlobalSettings pm txpConfig) (initNodeDBs pm epochSlots) $ \NodeResources{..} ->
@@ -121,11 +121,16 @@ newRealModeContext pm txpConfig dbs confOpts publicKeyPath secretKeyPath = do
                         <*> pure nrContext
                         <*> pure noReporter
                         -- <*> initQueue (defaultNetworkConfig (TopologyAuxx mempty)) Nothing
+  where
+    pm = configProtocolMagic coreConfig
+    generatedSecrets = fromMaybe
+        (error "Main.newRealModeContext: GeneratedSecrets missing from config")
+        (configGeneratedSecrets coreConfig)
 
 
 walletRunner
     :: HasConfigurations
-    => ProtocolMagic
+    => Core.Config
     -> TxpConfiguration
     -> ConfigurationOptions
     -> NodeDBs
@@ -134,11 +139,11 @@ walletRunner
     -> WalletDB
     -> UberMonad a
     -> IO a
-walletRunner pm txpConfig confOpts dbs publicKeyPath secretKeyPath ws act = do
+walletRunner coreConfig txpConfig confOpts dbs publicKeyPath secretKeyPath ws act = do
     wwmc <- WalletWebModeContext <$> pure ws
                                  <*> newTVarIO def
                                  <*> liftIO newTQueueIO
-                                 <*> newRealModeContext pm txpConfig dbs confOpts publicKeyPath secretKeyPath
+                                 <*> newRealModeContext coreConfig txpConfig dbs confOpts publicKeyPath secretKeyPath
     runReaderT act wwmc
 
 newWalletState :: MonadIO m => Bool -> FilePath -> m WalletDB

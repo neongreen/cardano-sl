@@ -63,19 +63,20 @@ import           Pos.Chain.Block (HasSlogGState (..))
 import           Pos.Chain.Delegation (DelegationVar, HasDlgConfiguration)
 import           Pos.Chain.Ssc (SscMemTag, SscState)
 import           Pos.Chain.Txp (TxpConfiguration (..))
-import           Pos.Core (CoreConfiguration (..), GenesisConfiguration (..),
-                     HasConfiguration, HasProtocolConstants, SlotId,
-                     Timestamp (..), epochSlots, genesisSecretKeys,
+import           Pos.Core as Core (Config (..), CoreConfiguration (..),
+                     GenesisConfiguration (..), HasConfiguration,
+                     HasProtocolConstants, SlotId, Timestamp (..), epochSlots,
                      withGenesisSpec)
 import           Pos.Core.Conc (currentTime)
 import           Pos.Core.Configuration (HasGenesisBlockVersionData,
                      withGenesisBlockVersionData)
-import           Pos.Core.Genesis (GenesisInitializer (..), GenesisSpec (..))
+import           Pos.Core.Genesis (GenesisInitializer (..), GenesisSpec (..),
+                     gsSecretKeys)
 import           Pos.Core.Reporting (HasMisbehaviorMetrics (..),
                      MonadReporting (..))
 import           Pos.Core.Slotting (MonadSlotsData)
 import           Pos.Core.Update (BlockVersionData)
-import           Pos.Crypto (ProtocolMagic)
+import           Pos.Crypto (SecretKey)
 import           Pos.DB (DBPure, MonadDB (..), MonadDBRead (..),
                      MonadGState (..))
 import qualified Pos.DB as DB
@@ -174,7 +175,7 @@ genGenesisInitializer = do
 
 -- This function creates 'CoreConfiguration' from 'TestParams' and
 -- uses it to satisfy 'HasConfiguration'.
-withTestParams :: TestParams -> (HasConfiguration => ProtocolMagic -> r) -> r
+withTestParams :: TestParams -> (HasConfiguration => Core.Config -> r) -> r
 withTestParams TestParams {..} = withGenesisSpec _tpStartTime coreConfiguration id
   where
     defaultCoreConf :: CoreConfiguration
@@ -252,9 +253,10 @@ initBlockTestContext ::
        , HasDlgConfiguration
        )
     => TestParams
+    -> [SecretKey]
     -> (BlockTestContext -> Emulation a)
     -> Emulation a
-initBlockTestContext tp@TestParams {..} callback = do
+initBlockTestContext tp@TestParams {..} genesisSecretKeys callback = do
     clockVar <- Emulation ask
     dbPureVar <- newDBPureVar
     (futureLrcCtx, putLrcCtx) <- newInitFuture "lrcCtx"
@@ -286,12 +288,7 @@ initBlockTestContext tp@TestParams {..} callback = do
             let btcGState = GS.GStateContext {_gscDB = DB.PureDB dbPureVar, ..}
             btcDelegation <- mkDelegationVar
             btcPureDBSnapshots <- PureDBSnapshotsVar <$> newIORef Map.empty
-            let secretKeys =
-                    case genesisSecretKeys of
-                        Nothing ->
-                            error "initBlockTestContext: no genesisSecretKeys"
-                        Just ks -> ks
-            let btcAllSecrets = mkAllSecretsSimple secretKeys
+            let btcAllSecrets = mkAllSecretsSimple genesisSecretKeys
             let btCtx = BlockTestContext {btcSystemStart = systemStart, btcSSlottingStateVar = slottingState, ..}
             liftIO $ flip runReaderT clockVar $ unEmulation $ callback btCtx
     sudoLiftIO $ runTestInitMode initCtx $ initBlockTestContextDo
@@ -312,11 +309,12 @@ runBlockTestMode ::
        , HasConfiguration
        )
     => TestParams
+    -> [SecretKey]
     -> BlockTestMode a
     -> IO a
-runBlockTestMode tp action =
+runBlockTestMode tp genesisSecretKeys action =
     runEmulation (getTimestamp $ tp ^. tpStartTime) $
-    initBlockTestContext tp (runReaderT action)
+    initBlockTestContext tp genesisSecretKeys (runReaderT action)
 
 ----------------------------------------------------------------------------
 -- Property
@@ -329,12 +327,18 @@ type BlockProperty = PropertyM BlockTestMode
 blockPropertyToProperty
     :: (HasDlgConfiguration, Testable a)
     => Gen TestParams
-    -> (HasConfiguration => BlockProperty a)
+    -> (HasConfiguration => Core.Config -> BlockProperty a)
     -> Property
 blockPropertyToProperty tpGen blockProperty =
-    forAll tpGen $ \tp ->
-        withTestParams tp $ \_ ->
-        monadic (ioProperty . runBlockTestMode tp) blockProperty
+    forAll tpGen $ \tp -> withTestParams tp $ \coreConfig -> do
+        let
+            genesisSecretKeys = gsSecretKeys $ fromMaybe
+                (error
+                    "Mode.blockPropertyToProperty: GeneratedSecrets missing from config"
+                )
+                (configGeneratedSecrets coreConfig)
+        monadic (ioProperty . runBlockTestMode tp genesisSecretKeys)
+                (blockProperty coreConfig)
 
 -- | Simplified version of 'blockPropertyToProperty' which uses
 -- 'Arbitrary' instance to generate 'TestParams'.
@@ -350,7 +354,7 @@ blockPropertyToProperty tpGen blockProperty =
 --     property = blockPropertyToProperty arbitrary
 blockPropertyTestable ::
        (HasDlgConfiguration, Testable a)
-    => (HasConfiguration => BlockProperty a)
+    => (HasConfiguration => Core.Config -> BlockProperty a)
     -> Property
 blockPropertyTestable = blockPropertyToProperty arbitrary
 
