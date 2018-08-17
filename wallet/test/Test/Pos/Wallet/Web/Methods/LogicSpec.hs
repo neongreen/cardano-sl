@@ -10,6 +10,7 @@ import           Universum
 import           Test.Hspec (Spec, describe)
 import           Test.Hspec.QuickCheck (prop)
 
+import           Pos.Chain.Txp (RequiresNetworkMagic (..))
 import           Pos.Launcher (HasConfigurations)
 import           Pos.Wallet.Web.Methods.Logic (getAccounts, getWallets)
 
@@ -20,10 +21,10 @@ import           Test.Pos.Wallet.Web.Mode (WalletProperty)
 -- TODO remove HasCompileInfo when MonadWalletWebMode will be splitted.
 spec :: Spec
 spec = do
-    runWithNetworkMagic True
-    runWithNetworkMagic False
+    runWithNetworkMagic NMMustBeJust
+    runWithNetworkMagic NMMustBeNothing
 
-runWithNetworkMagic :: Bool -> Spec
+runWithNetworkMagic :: RequiresNetworkMagic -> Spec
 runWithNetworkMagic requiresNetworkMagic = do
     withDefConfigurations requiresNetworkMagic $ \_ _ _ ->
         describe ("Pos.Wallet.Web.Methods (requiresNetworkMagic="

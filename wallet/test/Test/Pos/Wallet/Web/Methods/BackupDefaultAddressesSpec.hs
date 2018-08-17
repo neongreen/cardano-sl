@@ -7,24 +7,26 @@ module Test.Pos.Wallet.Web.Methods.BackupDefaultAddressesSpec
 
 import           Universum
 
-import           Pos.Launcher (HasConfigurations)
-
-import           Pos.Wallet.Web.ClientTypes (CWallet (..))
-import           Pos.Wallet.Web.Methods.Restore (restoreWalletFromBackup)
 import           Test.Hspec (Spec, describe)
 import           Test.Hspec.QuickCheck (modifyMaxSuccess)
-import           Test.Pos.Configuration (withDefConfigurations)
-import           Test.Pos.Util.QuickCheck.Property (assertProperty)
-import           Test.Pos.Wallet.Web.Mode (walletPropertySpec)
 import           Test.QuickCheck (Arbitrary (..))
 import           Test.QuickCheck.Monadic (pick)
 
+import           Pos.Chain.Txp (RequiresNetworkMagic (..))
+import           Pos.Launcher (HasConfigurations)
+import           Pos.Wallet.Web.ClientTypes (CWallet (..))
+import           Pos.Wallet.Web.Methods.Restore (restoreWalletFromBackup)
+
+import           Test.Pos.Configuration (withDefConfigurations)
+import           Test.Pos.Util.QuickCheck.Property (assertProperty)
+import           Test.Pos.Wallet.Web.Mode (walletPropertySpec)
+
 spec :: Spec
 spec = do
-    runWithNetworkMagic True
-    runWithNetworkMagic False
+    runWithNetworkMagic NMMustBeJust
+    runWithNetworkMagic NMMustBeNothing
 
-runWithNetworkMagic :: Bool -> Spec
+runWithNetworkMagic :: RequiresNetworkMagic -> Spec
 runWithNetworkMagic requiresNetworkMagic = do
     withDefConfigurations requiresNetworkMagic $ \_ _ _ ->
         describe ("restoreAddressFromWalletBackup (requiresNetworkMagic="

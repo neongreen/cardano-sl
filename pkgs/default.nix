@@ -16427,6 +16427,7 @@ cpphs
 benchmarkHaskellDepends = [
 base
 cardano-sl
+cardano-sl-chain-test
 cardano-sl-core-test
 criterion
 QuickCheck
@@ -16510,6 +16511,7 @@ base
 bytestring
 cardano-sl
 cardano-sl-chain
+cardano-sl-chain-test
 cardano-sl-client
 cardano-sl-core
 cardano-sl-core-test

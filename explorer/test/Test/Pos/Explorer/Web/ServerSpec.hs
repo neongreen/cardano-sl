@@ -13,6 +13,7 @@ import           Test.Hspec.QuickCheck (modifyMaxSuccess, prop)
 import           Test.QuickCheck (arbitrary, counterexample, forAll, (==>))
 import           Test.QuickCheck.Monadic (assert, monadicIO, run)
 
+import           Pos.Chain.Txp (RequiresNetworkMagic (..))
 import qualified Pos.Communication ()
 import           Pos.Core (EpochIndex (..))
 import           Pos.Explorer.ExplorerMode (runExplorerTestMode)
@@ -41,10 +42,10 @@ import           Test.Pos.Configuration (withDefConfigurations)
 -- stack test cardano-sl-explorer --fast --test-arguments "-m Pos.Explorer.Web.Server"
 spec :: Spec
 spec = do
-    runWithNetworkMagic True
-    runWithNetworkMagic False
+    runWithNetworkMagic NMMustBeJust
+    runWithNetworkMagic NMMustBeNothing
 
-runWithNetworkMagic :: Bool -> Spec
+runWithNetworkMagic :: RequiresNetworkMagic -> Spec
 runWithNetworkMagic requiresNetworkMagic = do
     withDefConfigurations requiresNetworkMagic $ \_ _ _ -> do
         describe ("Pos.Explorer.Web.Server (requiresNetworkMagic="

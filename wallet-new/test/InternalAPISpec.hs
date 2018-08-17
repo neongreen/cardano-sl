@@ -16,30 +16,30 @@ module InternalAPISpec (spec) where
 
 import           Universum
 
-import           Pos.Client.KeyStorage (getSecretKeysPlain)
-import           Pos.Wallet.Web.Account (genSaveRootKey)
+import           Data.Default (def)
+import           Servant
 
+import           Cardano.Wallet.API.Internal.Handlers (resetWalletState)
+import           Cardano.Wallet.Server.CLI (RunMode (..))
+import           Pos.Chain.Txp (RequiresNetworkMagic (..))
+import           Pos.Client.KeyStorage (getSecretKeysPlain)
 import           Pos.Launcher (HasConfigurations)
-import           Test.Pos.Util.QuickCheck.Property (assertProperty)
+import           Pos.Wallet.Web.Account (genSaveRootKey)
 
 import           Test.Hspec (Spec, describe)
 import           Test.Hspec.QuickCheck (modifyMaxSuccess)
 import           Test.Pos.Configuration (withDefConfigurations)
+import           Test.Pos.Util.QuickCheck.Property (assertProperty)
 import           Test.Pos.Wallet.Web.Mode (walletPropertySpec)
-
-import           Cardano.Wallet.API.Internal.Handlers (resetWalletState)
-import           Cardano.Wallet.Server.CLI (RunMode (..))
-import           Data.Default (def)
-import           Servant
 
 {-# ANN module ("HLint: ignore Reduce duplication" :: Text) #-}
 
 spec :: Spec
 spec = do
-    runWithNetworkMagic True
-    runWithNetworkMagic False
+    runWithNetworkMagic NMMustBeJust
+    runWithNetworkMagic NMMustBeNothing
 
-runWithNetworkMagic :: Bool -> Spec
+runWithNetworkMagic :: RequiresNetworkMagic -> Spec
 runWithNetworkMagic requiresNetworkMagic = do
     withDefConfigurations requiresNetworkMagic $ \_ _ _ ->
         describe ("development endpoint (requiresNetworkMagic="

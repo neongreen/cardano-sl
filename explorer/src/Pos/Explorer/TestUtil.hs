@@ -55,6 +55,7 @@ import           Pos.Explorer.DB (Epoch, EpochPagedBlocksKey, Page,
 import           Pos.Explorer.ExtraContext (ExplorerMockableMode (..))
 
 import           Test.Pos.Chain.Block.Arbitrary ()
+import           Test.Pos.Chain.Txp.Arbitrary ()
 import           Test.Pos.Configuration (withDefConfigurations)
 import           Test.Pos.Crypto.Dummy (dummyProtocolMagic)
 

@@ -16,11 +16,11 @@ import           Test.QuickCheck (Discard (..), arbitrary)
 import           Test.QuickCheck.Monadic (pick, stop)
 
 import           Pos.Binary (biSize)
+import           Pos.Chain.Txp (RequiresNetworkMagic (..))
 import           Pos.Client.Txp.Addresses (getFakeChangeAddress, getNewAddress)
 import           Pos.Core.Common (Address)
 import           Pos.Crypto (PassPhrase)
 import           Pos.Launcher (HasConfigurations)
-
 import           Pos.Wallet.Web.Account (GenSeed (..), genUniqueAddress)
 import           Pos.Wallet.Web.ClientTypes (AccountId, CAccountInit (..), caId)
 import           Pos.Wallet.Web.Error (WalletError (..))
@@ -28,6 +28,7 @@ import           Pos.Wallet.Web.Methods.Logic (newAccount)
 import           Pos.Wallet.Web.State (askWalletSnapshot, getWalletAddresses,
                      wamAddress)
 import           Pos.Wallet.Web.Util (decodeCTypeOrFail)
+
 import           Test.Pos.Configuration (withDefConfigurations)
 import           Test.Pos.Util.QuickCheck.Property (assertProperty, expectedOne)
 import           Test.Pos.Wallet.Web.Mode (WalletProperty)
@@ -36,10 +37,10 @@ import           Test.Pos.Wallet.Web.Util (importSingleWallet,
 
 spec :: Spec
 spec = do
-    runWithNetworkMagic True
-    runWithNetworkMagic False
+    runWithNetworkMagic NMMustBeJust
+    runWithNetworkMagic NMMustBeNothing
 
-runWithNetworkMagic :: Bool -> Spec
+runWithNetworkMagic :: RequiresNetworkMagic -> Spec
 runWithNetworkMagic requiresNetworkMagic = do
     withDefConfigurations requiresNetworkMagic $ \_ _ _ ->
         describe ("Fake address has maximal possible size (requiresNetworkMagic="

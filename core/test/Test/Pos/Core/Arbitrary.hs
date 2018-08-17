@@ -41,8 +41,8 @@ import           Pos.Core (AddrAttributes (..), AddrSpendingData (..),
                      AddrStakeDistribution (..), AddrType (..), Address (..),
                      Address' (..), BlockCount (..), ChainDifficulty (..),
                      Coeff (..), Coin (..), CoinPortion (..), EpochIndex (..),
-                     EpochOrSlot (..), LocalSlotIndex (..), Script (..),
-                     SharedSeed (..), SlotCount (..), SlotId (..),
+                     EpochOrSlot (..), LocalSlotIndex (..), NetworkMagic (..),
+                     Script (..), SharedSeed (..), SlotCount (..), SlotId (..),
                      StakeholderId, TimeDiff (..), Timestamp (..),
                      TxFeePolicy (..), TxSizeLinear (..),
                      coinPortionDenominator, coinToInteger, divCoin,
@@ -257,6 +257,13 @@ instance Arbitrary AddrStakeDistribution where
                     portion <-
                         CoinPortion <$> choose (1, max 1 (limit - 1))
                     genPortions (n - 1) (portion : res)
+
+instance Arbitrary NetworkMagic where
+    arbitrary =
+        oneof
+            [ pure NMNothing
+            , NMJust <$> arbitrary
+            ]
 
 instance Arbitrary AddrAttributes where
     arbitrary = genericArbitrary

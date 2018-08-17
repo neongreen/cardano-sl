@@ -154,11 +154,11 @@ import           Pos.Core.Attributes (Attributes (..), mkAttributes)
 import           Pos.Core.Common (AddrAttributes (..), AddrSpendingData (..),
                      AddrStakeDistribution (..), AddrType (..), Address (..),
                      BlockCount (..), ChainDifficulty (..), Coeff (..),
-                     Coin (..), CoinPortion (..), Script (..), ScriptVersion,
-                     SharedSeed (..), SlotLeaders, StakeholderId, StakesList,
-                     StakesMap, TxFeePolicy (..), TxSizeLinear (..),
-                     coinPortionDenominator, makeAddress, maxCoinVal,
-                     mkMultiKeyDistr)
+                     Coin (..), CoinPortion (..), NetworkMagic (..),
+                     Script (..), ScriptVersion, SharedSeed (..), SlotLeaders,
+                     StakeholderId, StakesList, StakesMap, TxFeePolicy (..),
+                     TxSizeLinear (..), coinPortionDenominator, makeAddress,
+                     maxCoinVal, mkMultiKeyDistr)
 import           Pos.Core.Configuration (CoreConfiguration (..),
                      GenesisConfiguration (..), GenesisHash (..))
 import           Pos.Core.Delegation (DlgPayload (..), HeavyDlgIndex (..),
@@ -195,8 +195,8 @@ import           Pos.Core.Update (ApplicationName (..), BlockVersion (..),
                      UpdateProof, UpdateProposal (..),
                      UpdateProposalToSign (..), UpdateProposals,
                      UpdateVote (..), VoteId, mkUpdateVote)
-import           Pos.Crypto (Hash, ProtocolMagic (..), decodeHash, deterministic,
-                     hash, safeCreatePsk, sign)
+import           Pos.Crypto (Hash, ProtocolMagic (..), decodeHash,
+                     deterministic, hash, safeCreatePsk, sign)
 import           Pos.Util.Util (leftToPanic)
 import           Serokell.Data.Memory.Units (Byte)
 
@@ -215,10 +215,12 @@ genGenesisHash = do
 ----------------------------------------------------------------------------
 
 genAddrAttributes :: Gen AddrAttributes
-genAddrAttributes = AddrAttributes <$> hap <*> genAddrStakeDistribution <*> pm
+genAddrAttributes = AddrAttributes <$> hap <*> genAddrStakeDistribution <*> nm
   where
     hap = Gen.maybe genHDAddressPayload
-    pm  = getProtocolMagic <<$>> Gen.maybe genProtocolMagic
+    nm  = Gen.choice [ pure NMNothing
+                     , NMJust . getProtocolMagic <$> genProtocolMagic
+                     ]
 
 genAddress :: Gen Address
 genAddress = makeAddress <$> genAddrSpendingData <*> genAddrAttributes

@@ -25,7 +25,8 @@ import           Test.QuickCheck.Monadic (PropertyM, pick)
 
 import           Pos.AllSecrets (AllSecrets, HasAllSecrets (..), allSecrets)
 import           Pos.Chain.Block (Block, Blund)
-import           Pos.Chain.Txp (TxpConfiguration (..))
+import           Pos.Chain.Txp (RequiresNetworkMagic (..),
+                     TxpConfiguration (..))
 import           Pos.Core (BlockCount, HasGenesisData, HasProtocolConstants,
                      SlotId (..), epochIndexL, genesisData)
 import           Pos.Core.Chrono (NE, OldestFirst (..))
@@ -55,7 +56,7 @@ genBlockGenParams
        , MonadReader ctx m
        )
     => ProtocolMagic
-    -> Bool
+    -> RequiresNetworkMagic
     -> Maybe BlockCount
     -> EnableTxPayload
     -> InplaceDB

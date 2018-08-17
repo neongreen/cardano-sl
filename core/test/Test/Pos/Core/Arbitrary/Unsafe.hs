@@ -8,7 +8,8 @@ import           Universum
 
 import           Pos.Core (AddrAttributes (..), AddrStakeDistribution (..),
                      AddrType (..), Address (..), Coin, EpochIndex (..),
-                     LocalSlotIndex, SharedSeed (..), SlotId (..), mkCoin)
+                     LocalSlotIndex, NetworkMagic (..), SharedSeed (..),
+                     SlotId (..), mkCoin)
 import           Pos.Core.Attributes (mkAttributes)
 import           Pos.Core.Configuration (HasProtocolConstants)
 
@@ -32,7 +33,7 @@ instance ArbitraryUnsafe Address where
                 AddrAttributes
                 { aaPkDerivationPath = Nothing
                 , aaStakeDistribution = BootstrapEraDistr
-                , aaNetworkMagic = Nothing
+                , aaNetworkMagic = NMNothing
                 }
         let addrType = ATPubKey
         return Address {..}

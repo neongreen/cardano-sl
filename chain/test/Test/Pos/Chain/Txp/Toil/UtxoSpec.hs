@@ -25,9 +25,10 @@ import           Pos.Chain.Script.Examples (alwaysSuccessValidator,
                      goodStdlibRedeemer, idValidator, intValidator,
                      intValidatorWithBlah, multisigRedeemer, multisigValidator,
                      shaStressRedeemer, sigStressRedeemer, stdlibValidator)
-import           Pos.Chain.Txp (ToilVerFailure (..), Utxo, VTxContext (..),
-                     VerifyTxUtxoRes, WitnessVerFailure (..), applyTxToUtxo,
-                     evalUtxoM, execUtxoM, utxoGet, utxoToLookup, verifyTxUtxo)
+import           Pos.Chain.Txp (RequiresNetworkMagic (..), ToilVerFailure (..),
+                     Utxo, VTxContext (..), VerifyTxUtxoRes,
+                     WitnessVerFailure (..), applyTxToUtxo, evalUtxoM,
+                     execUtxoM, utxoGet, utxoToLookup, verifyTxUtxo)
 import           Pos.Core (HasConfiguration, addressHash, checkPubKeyAddress,
                      defaultCoreConfiguration, makePubKeyAddressBoot,
                      makeScriptAddress, mkCoin, sumCoins, withGenesisSpec)
@@ -111,7 +112,8 @@ verifyTxInUtxo pm (SmallGenerator (GoodTx ls)) =
         -- passing it into the below vtxContext. Then we'll get consistent
         -- Address generation and verification.
         -- For now, we're copping out, but this must be revisited.
-        vtxContext = VTxContext False pm False
+        -- TODO @intricate: ^^. Apply to all references of NMMustBeNothing.
+        vtxContext = VTxContext False pm NMMustBeNothing
         txAux = TxAux newTx witness
     in counterexample ("\n"+|nameF "txs" (blockListF' "-" genericF txs)|+""
                            +|nameF "transaction" (B.build txAux)|+"") $
@@ -121,7 +123,7 @@ badSigsTx :: ProtocolMagic -> SmallGenerator BadSigsTx -> Property
 badSigsTx pm (SmallGenerator (getBadSigsTx -> ls)) =
     let (tx@UnsafeTx {..}, utxo, extendedInputs, txWits) =
             getTxFromGoodTx ls
-        ctx = VTxContext False pm False
+        ctx = VTxContext False pm NMMustBeNothing
         transactionVerRes =
             verifyTxUtxoSimple ctx utxo $ TxAux tx txWits
         notAllSignaturesAreValid =
@@ -134,7 +136,7 @@ doubleInputTx :: ProtocolMagic -> SmallGenerator DoubleInputTx -> Property
 doubleInputTx pm (SmallGenerator (getDoubleInputTx -> ls)) =
     let ((tx@UnsafeTx {..}), utxo, _extendedInputs, txWits) =
             getTxFromGoodTx ls
-        ctx = VTxContext False pm False
+        ctx = VTxContext False pm NMMustBeNothing
         transactionVerRes =
             verifyTxUtxoSimple ctx utxo $ TxAux tx txWits
         someInputsAreDuplicated =
@@ -144,7 +146,7 @@ doubleInputTx pm (SmallGenerator (getDoubleInputTx -> ls)) =
 validateGoodTx :: ProtocolMagic -> SmallGenerator GoodTx -> Property
 validateGoodTx pm (SmallGenerator (getGoodTx -> ls)) =
     let quadruple@(tx, utxo, _, txWits) = getTxFromGoodTx ls
-        ctx = VTxContext False pm False
+        ctx = VTxContext False pm NMMustBeNothing
         transactionVerRes =
             verifyTxUtxoSimple ctx utxo $ TxAux tx txWits
         transactionReallyIsGood = individualTxPropertyVerifier pm quadruple
@@ -433,7 +435,7 @@ scriptTxSpec pm = describe "script transactions" $ do
 
     -- Do not verify versions
     -- Do not require ProtocolMagic
-    vtxContext = VTxContext False pm False
+    vtxContext = VTxContext False pm NMMustBeNothing
 
     -- Try to apply a transaction (with given utxo as context) and say
     -- whether it applied successfully

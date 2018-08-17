@@ -1,11 +1,16 @@
+{-# LANGUAGE DeriveGeneric #-}
+
 module Pos.Core.Common.AddrAttributes
        ( AddrAttributes (..)
+       , NetworkMagic (..)
        ) where
 
 import           Universum
 
 import qualified Data.ByteString.Lazy as LBS
-import           Data.SafeCopy (base, deriveSafeCopySimple)
+import           Data.SafeCopy (SafeCopy (..), base, contain,
+                     deriveSafeCopySimple, safeGet, safePut)
+import           Data.Serialize (getWord8, putWord8)
 import           Formatting (bprint, build, builder, (%))
 import qualified Formatting.Buildable as Buildable
 
@@ -13,9 +18,24 @@ import           Pos.Binary.Class (Bi, decode, encode)
 import qualified Pos.Binary.Class as Bi
 import           Pos.Core.Attributes (Attributes (..), decodeAttributes,
                      encodeAttributes)
-import           Pos.Crypto.HD (HDAddressPayload)
-
 import           Pos.Core.Common.AddrStakeDistribution
+import           Pos.Crypto.HD (HDAddressPayload)
+import           Pos.Util.Util (cerealError)
+
+data NetworkMagic
+    = NMNothing
+    | NMJust !Int32
+    deriving (Eq, Generic, Ord, Show)
+
+instance NFData NetworkMagic
+
+instance SafeCopy NetworkMagic where
+    getCopy = contain $ getWord8 >>= \case
+        0 -> pure NMNothing
+        1 -> NMJust <$> safeGet
+        t -> cerealError $ "getCopy@NetworkMagic: couldn't read tag: " <> show t
+    putCopy NMNothing  = contain $ putWord8 0
+    putCopy (NMJust x) = contain $ putWord8 1 >> safePut x
 
 -- | Additional information stored along with address. It's intended
 -- to be put into 'Attributes' data type to make it extensible with
@@ -24,7 +44,7 @@ data AddrAttributes = AddrAttributes
     { aaPkDerivationPath  :: !(Maybe HDAddressPayload)
     , aaStakeDistribution :: !AddrStakeDistribution
     -- TODO mhueschen - turn this into an Int8 or Word8 to be smaller
-    , aaNetworkMagic      :: !(Maybe Int32)
+    , aaNetworkMagic      :: !NetworkMagic
     } deriving (Eq, Ord, Show, Generic, Typeable)
 
 instance Buildable AddrAttributes where
@@ -82,9 +102,9 @@ instance Bi (Attributes AddrAttributes) where
 
         networkMagicListWithIndices =
             case networkMagic of
-                Nothing -> []
-                Just _  ->
-                    [(2, Bi.serialize . unsafeFromJust . aaNetworkMagic)]
+                NMNothing -> []
+                NMJust x  ->
+                    [(2, \_ -> Bi.serialize x)]
 
         unsafeFromJust =
             fromMaybe
@@ -96,13 +116,13 @@ instance Bi (Attributes AddrAttributes) where
             AddrAttributes
             { aaPkDerivationPath = Nothing
             , aaStakeDistribution = BootstrapEraDistr
-            , aaNetworkMagic = Nothing
+            , aaNetworkMagic = NMNothing
             }
         go n v acc =
             case n of
                 0 -> (\distr -> Just $ acc {aaStakeDistribution = distr }    ) <$> Bi.deserialize v
                 1 -> (\deriv -> Just $ acc {aaPkDerivationPath = Just deriv }) <$> Bi.deserialize v
-                2 -> (\deriv -> Just $ acc {aaNetworkMagic = Just deriv }    ) <$> Bi.deserialize v
+                2 -> (\deriv -> Just $ acc {aaNetworkMagic = NMJust deriv }    ) <$> Bi.deserialize v
                 _ -> pure Nothing
 
 deriveSafeCopySimple 0 'base ''AddrAttributes

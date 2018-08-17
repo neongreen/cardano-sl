@@ -20,16 +20,17 @@ import           Serokell.Util (allDistinct, enumerate)
 
 import           Pos.Chain.Script (Script (..), isKnownScriptVersion,
                      txScriptCheck)
+import           Pos.Chain.Txp.Configuration (RequiresNetworkMagic (..))
 import           Pos.Chain.Txp.Toil.Failure (ToilVerFailure (..),
                      TxOutVerFailure (..), WitnessVerFailure (..))
 import           Pos.Chain.Txp.Toil.Monad (UtxoM, utxoDel, utxoGet, utxoPut)
 import           Pos.Chain.Txp.Toil.Types (TxFee (..))
 import           Pos.Core (AddrType (..), Address (..), integerToCoin,
                      isRedeemAddress, isUnknownAddressType, sumCoins)
-import           Pos.Core.Attributes (Attributes (..),
-                     areAttributesKnown)
-import           Pos.Core.Common (AddrAttributes (..), checkPubKeyAddress,
-                     checkRedeemAddress, checkScriptAddress)
+import           Pos.Core.Attributes (Attributes (..), areAttributesKnown)
+import           Pos.Core.Common (AddrAttributes (..), NetworkMagic (..),
+                     checkPubKeyAddress, checkRedeemAddress,
+                     checkScriptAddress)
 import           Pos.Core.Txp (Tx (..), TxAttributes, TxAux (..), TxIn (..),
                      TxInWitness (..), TxOut (..), TxOutAux (..),
                      TxSigData (..), TxUndo, TxWitness, isTxInUnknown)
@@ -50,9 +51,15 @@ import           Pos.Util (liftEither)
 data VTxContext = VTxContext
     { -- | Verify that script versions in tx are known, addresses' and
       -- witnesses' types are known, attributes are known too.
-      vtcVerifyAllIsKnown :: !Bool
-    , vtcProtocolMagic :: !ProtocolMagic
-    , vtcRequiresAddressMagic :: !Bool
+      vtcVerifyAllIsKnown     :: !Bool
+
+      -- | TODO @intricate: doc this
+    , vtcProtocolMagic        :: !ProtocolMagic
+
+      -- | Field indicating presence/absense of ProtocolMagic in Addresses
+      -- for this cluster.
+    , vtcRequiresAddressMagic :: !RequiresNetworkMagic
+
 --    , vtcSlotId   :: !SlotId         -- ^ Slot id of block transaction is checked in
 --    , vtcLeaderId :: !StakeholderId  -- ^ Leader id of block transaction is checked in
     }
@@ -195,15 +202,24 @@ verifyOutputs VTxContext {..} (TxAux UnsafeTx {..} _) =
             throwError $ ToilInvalidOutput i (TxOutAddressBadProtocolMagic addr)
 
     addressHasValidMagic :: AddrAttributes -> Bool
-    addressHasValidMagic addrAttrs
+    addressHasValidMagic AddrAttributes {aaNetworkMagic = nm}
         -- used by mainnet and staging
-      | (not vtcRequiresAddressMagic)
-      = isNothing (aaNetworkMagic addrAttrs)
+      | (not $ isAddressMagicRequired vtcRequiresAddressMagic)
+      = isNMNothing nm
 
         -- used by all other dev/testnets
       | otherwise
-      = (ProtocolMagic <$> aaNetworkMagic addrAttrs)
-            == Just vtcProtocolMagic
+      = nm == (NMJust $ getProtocolMagic vtcProtocolMagic)
+
+    -- TODO @intricate: Perhaps this should be a sort of utility function?
+    isAddressMagicRequired :: RequiresNetworkMagic -> Bool
+    isAddressMagicRequired NMMustBeNothing = False
+    isAddressMagicRequired _               = True
+
+    -- TODO @intricate: Perhaps this should be a sort of utility function?
+    isNMNothing :: NetworkMagic -> Bool
+    isNMNothing NMNothing = True
+    isNMNothing _         = False
 
 -- Verify inputs of a transaction after they have been resolved
 -- (implies that they are known).

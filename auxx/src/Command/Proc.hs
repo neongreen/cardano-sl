@@ -23,7 +23,7 @@ import           Pos.Client.Txp.Balances (getBalance)
 import           Pos.Core (AddrStakeDistribution (..), Address, StakeholderId,
                      addressHash, mkMultiKeyDistr, unsafeGetCoin)
 import           Pos.Core.Common (AddrAttributes (..), AddrSpendingData (..),
-                     makeAddress)
+                     NetworkMagic (..), makeAddress)
 import           Pos.Core.Configuration (genesisSecretKeys)
 import           Pos.Core.Delegation (HeavyDlgIndex (..))
 import           Pos.Core.Txp (TxOut (..))
@@ -100,6 +100,7 @@ createCommandProcs mpm mTxpConfig hasAuxxMode printAction mDiffusion = rights . 
     },
 
     let name = "addr" in
+    needsProtocolMagic name >>= \pm ->
     needsAuxxMode name >>= \Dict ->
     return CommandProc
     { cpName = name
@@ -113,10 +114,10 @@ createCommandProcs mpm mTxpConfig hasAuxxMode printAction mDiffusion = rights . 
         addr <- case mDistr of
             Nothing -> makePubKeyAddressAuxx pk
             Just distr -> return $
-                let mpmInt = getProtocolMagic <$> mpm
+                let networkMagic = NMJust $ getProtocolMagic pm
                  in makeAddress (PubKeyASD pk) (AddrAttributes Nothing
                                                                distr
-                                                               mpmInt)
+                                                               networkMagic)
         return $ ValueAddress addr
     , cpHelp = "address for the specified public key. a stake distribution \
              \ can be specified manually (by default it uses the current epoch \

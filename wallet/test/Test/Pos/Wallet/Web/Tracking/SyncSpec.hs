@@ -19,7 +19,8 @@ import           Test.QuickCheck (Arbitrary (..), Property, choose, oneof,
                      sublistOf, suchThat, vectorOf, (===))
 import           Test.QuickCheck.Monadic (pick)
 
-import           Pos.Chain.Txp (TxpConfiguration (..))
+import           Pos.Chain.Txp (RequiresNetworkMagic (..),
+                     TxpConfiguration (..))
 import           Pos.Core (Address, BlockCount (..), blkSecurityParam)
 import           Pos.Core.Chrono (nonEmptyOldestFirst, toNewestFirst)
 import           Pos.Crypto (emptyPassphrase)
@@ -37,7 +38,6 @@ import           Pos.Wallet.Web.Tracking.Types (newSyncRequest)
 -- import           Pos.Wallet.Web.State.Storage (WalletStorage (..))
 -- import           Pos.Wallet.Web.Tracking.Sync (evalChange)
 
-
 import           Test.Pos.Block.Logic.Util (EnableTxPayload (..),
                      InplaceDB (..))
 import           Test.Pos.Configuration (withDefConfigurations)
@@ -49,10 +49,10 @@ import           Test.Pos.Wallet.Web.Util (importSomeWallets, wpGenBlocks)
 
 spec :: Spec
 spec = do
-    runWithNetworkMagic True
-    runWithNetworkMagic False
+    runWithNetworkMagic NMMustBeJust
+    runWithNetworkMagic NMMustBeNothing
 
-runWithNetworkMagic :: Bool -> Spec
+runWithNetworkMagic :: RequiresNetworkMagic -> Spec
 runWithNetworkMagic requiresNetworkMagic =
     withDefConfigurations requiresNetworkMagic $ \_ _ _ -> do
         describe ("Pos.Wallet.Web.Tracking.BListener (requiresNetworkMagic="
@@ -83,7 +83,7 @@ twoApplyTwoRollbacksSpec = walletPropertySpec twoApplyTwoRollbacksDesc $ do
     applyBlocksCnt1 <- pick $ choose (1, k `div` 2)
     applyBlocksCnt2 <- pick $ choose (1, k `div` 2)
     -- TODO mhueschen | should this be arbitrary? --\/
-    let txpConfig = TxpConfiguration 200 Set.empty True
+    let txpConfig = TxpConfiguration 200 Set.empty NMMustBeJust
     blunds1 <- wpGenBlocks dummyProtocolMagic
                            txpConfig
                            (Just $ BlockCount applyBlocksCnt1)

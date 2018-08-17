@@ -10,6 +10,7 @@ import           Criterion.Types (Config (..))
 import           Weigh (io, mainWith)
 
 import           Test.QuickCheck (arbitrary, generate)
+import           Test.QuickCheck.Monadic (PropertyM (..), pick)
 
 import           Pos.Explorer.DB (defaultPageSize)
 import           Pos.Explorer.ExplorerMode (ExplorerTestParams,
@@ -20,6 +21,7 @@ import           Pos.Explorer.TestUtil (BlockNumber, SlotsPerEpoch,
 import           Pos.Explorer.Web.ClientTypes (CBlockEntry)
 import           Pos.Explorer.Web.Server (getBlocksPage, getBlocksTotal)
 
+import           Test.Pos.Chain.Txp.Arbitrary ()
 import           Test.Pos.Configuration (withDefConfigurations)
 import           Test.Pos.Core.Arbitrary.Txp.Unsafe ()
 

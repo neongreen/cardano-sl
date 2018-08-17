@@ -31,7 +31,8 @@ import           Pos.Chain.Block (HasBlockConfiguration, withBlockConfiguration)
 import           Pos.Chain.Delegation (HasDlgConfiguration,
                      withDlgConfiguration)
 import           Pos.Chain.Ssc (HasSscConfiguration, withSscConfiguration)
-import           Pos.Chain.Txp (TxpConfiguration (..))
+import           Pos.Chain.Txp (RequiresNetworkMagic (..),
+                     TxpConfiguration (..))
 import           Pos.Chain.Update (HasUpdateConfiguration,
                      withUpdateConfiguration)
 import           Pos.Configuration (HasNodeConfiguration, withNodeConfiguration)
@@ -94,7 +95,7 @@ withDefDlgConfiguration = withDlgConfiguration (ccDlg defaultTestConf)
 withDefConfiguration :: (HasConfiguration => ProtocolMagic -> r) -> r
 withDefConfiguration = withGenesisSpec 0 (ccCore defaultTestConf) id
 
-withStaticConfigurations :: Bool -> (HasStaticConfigurations => TxpConfiguration -> NtpConfiguration -> r) -> r
+withStaticConfigurations :: RequiresNetworkMagic -> (HasStaticConfigurations => TxpConfiguration -> NtpConfiguration -> r) -> r
 withStaticConfigurations requiresNetworkMagic patak =
     withDefNodeConfiguration $
     withDefSscConfiguration $
@@ -105,7 +106,7 @@ withStaticConfigurations requiresNetworkMagic patak =
         (patak $ TxpConfiguration 200 Set.empty requiresNetworkMagic)
 
 withDefConfigurations
-    :: Bool -> (HasConfigurations => ProtocolMagic -> TxpConfiguration -> NtpConfiguration -> r) -> r
+    :: RequiresNetworkMagic -> (HasConfigurations => ProtocolMagic -> TxpConfiguration -> NtpConfiguration -> r) -> r
 withDefConfigurations requiresNetworkMagic bardaq =
     withDefConfiguration $ \pm -> withStaticConfigurations requiresNetworkMagic
                                                            (bardaq pm)

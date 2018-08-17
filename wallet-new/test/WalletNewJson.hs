@@ -4,16 +4,17 @@ module WalletNewJson
 
 import           Universum
 
+import           Data.List.NonEmpty (fromList)
+import           Hedgehog (Property)
+import qualified Hedgehog as H
+
 import           Cardano.Wallet.API.V1.Errors (WalletError (..))
 import           Cardano.Wallet.API.V1.Types (SyncProgress (..), V1 (..),
                      mkEstimatedCompletionTime, mkSyncPercentage,
                      mkSyncThroughput)
-import           Data.List.NonEmpty (fromList)
-import           Hedgehog (Property)
-import qualified Hedgehog as H
 import           Pos.Core.Common (AddrAttributes (..), AddrSpendingData (..),
                      AddrStakeDistribution (..), Address (..), BlockCount (..),
-                     Script (..), makeAddress)
+                     NetworkMagic (..), Script (..), makeAddress)
 import           Pos.Crypto.HD (HDAddressPayload (..))
 import           WalletNewGen (genWalletError)
 
@@ -129,6 +130,9 @@ exampleAddress = V1 $ makeAddress (ScriptASD (Script 0 "bytes")) addrAttrib
         AddrAttributes
             (Just $ HDAddressPayload "jpzgcjlmlcetfhrrcgwxqzpfveupoyie")
             BootstrapEraDistr
+            NMNothing -- TODO @intricate: I'm assuming we should have two
+                      -- golden tests for Address now. One with NMNothing
+                      -- and another with NMJust.
 
 exampleSyncProgress :: SyncProgress
 exampleSyncProgress =

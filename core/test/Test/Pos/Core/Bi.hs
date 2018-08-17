@@ -54,10 +54,10 @@ import           Pos.Core.Common (AddrAttributes (..), AddrSpendingData (..),
                      AddrStakeDistribution (..), AddrType (..),
                      BlockCount (..), ChainDifficulty (..), Coeff (..),
                      Coin (..), CoinPortion (..), IsBootstrapEraAddr (..),
-                     Script (..), ScriptVersion, SharedSeed (..), SlotLeaders,
-                     StakeholderId, StakesList, TxFeePolicy (..),
-                     TxSizeLinear (..), addressHash, makeAddress,
-                     makePubKeyAddress)
+                     NetworkMagic (..), Script (..), ScriptVersion,
+                     SharedSeed (..), SlotLeaders, StakeholderId, StakesList,
+                     TxFeePolicy (..), TxSizeLinear (..), addressHash,
+                     makeAddress, makePubKeyAddress)
 import           Pos.Core.Delegation (DlgPayload (..), HeavyDlgIndex (..),
                      LightDlgIndices (..), ProxySKBlockInfo, ProxySKHeavy)
 import           Pos.Core.Merkle (mkMerkleTree, mtRoot)
@@ -113,7 +113,7 @@ golden_Address :: Property
 golden_Address = goldenTestBi a "test/golden/Address"
   where
     a = makeAddress exampleAddrSpendingData_PubKey attrs
-    attrs = AddrAttributes hap BootstrapEraDistr Nothing
+    attrs = AddrAttributes hap BootstrapEraDistr NMNothing
     hap = Just (HDAddressPayload (getBytes 32 32))
 
 roundTripAddressBi :: Property

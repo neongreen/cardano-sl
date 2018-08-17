@@ -261,7 +261,7 @@ sampleAddress = V1 $ Core.Address
     , Core.addrAttributes =
         Core.mkAttributes $ Core.AddrAttributes Nothing
                                                 Core.BootstrapEraDistr
-                                                Nothing
+                                                Core.NMNothing
     , Core.addrType =
         Core.ATPubKey
     }

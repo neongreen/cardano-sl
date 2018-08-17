@@ -22,7 +22,8 @@ import           Test.Hspec.QuickCheck (modifyMaxSuccess)
 import           Test.QuickCheck (arbitrary, choose, generate)
 import           Test.QuickCheck.Monadic (pick)
 
-import           Pos.Chain.Txp (TxFee (..), TxpConfiguration)
+import           Pos.Chain.Txp (RequiresNetworkMagic (..), TxFee (..),
+                     TxpConfiguration)
 import           Pos.Client.Txp.Balances (getBalance)
 import           Pos.Client.Txp.Util (InputSelectionPolicy (..), txToLinearFee)
 import           Pos.Core (Address, Coin, TxFeePolicy (..), mkCoin, sumCoins,
@@ -63,10 +64,10 @@ deriving instance Eq CTx
 -- TODO remove HasCompileInfo when MonadWalletWebMode will be splitted.
 spec :: Spec
 spec = do
-    runWithNetworkMagic True
-    runWithNetworkMagic False
+    runWithNetworkMagic NMMustBeJust
+    runWithNetworkMagic NMMustBeNothing
 
-runWithNetworkMagic :: Bool -> Spec
+runWithNetworkMagic :: RequiresNetworkMagic -> Spec
 runWithNetworkMagic requiresNetworkMagic = withCompileInfo $
     withDefConfigurations requiresNetworkMagic $ \_ txpConfig _ ->
         describe ("Wallet.Web.Methods.Payment (requiresNetworkMagic="

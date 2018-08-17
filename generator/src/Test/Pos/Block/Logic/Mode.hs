@@ -116,6 +116,7 @@ import           Pos.WorkMode (EmptyMempoolExt)
 
 import           Test.Pos.Block.Logic.Emulation (Emulation (..), runEmulation,
                      sudoLiftIO)
+import           Test.Pos.Chain.Txp.Arbitrary ()
 import           Test.Pos.Configuration (defaultTestBlockVersionData,
                      defaultTestConf, defaultTestGenesisSpec)
 import           Test.Pos.Core.Arbitrary ()

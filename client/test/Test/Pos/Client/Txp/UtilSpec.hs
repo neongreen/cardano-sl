@@ -20,7 +20,7 @@ import           Test.QuickCheck (Discard (..), Gen, Testable, arbitrary,
                      choose)
 import           Test.QuickCheck.Monadic (forAllM, stop)
 
-import           Pos.Chain.Txp (Utxo)
+import           Pos.Chain.Txp (RequiresNetworkMagic (..), Utxo)
 import           Pos.Client.Txp.Addresses (MonadAddresses (..))
 import           Pos.Client.Txp.Util (InputSelectionPolicy (..), TxError (..),
                      TxOutputs, TxWithSpendings, createMTx, createRedemptionTx,
@@ -52,12 +52,12 @@ spec :: Spec
 spec = do
     -- Test with configuration that requires NetworkMagic
     -- in addresses (testnet)
-    withDefConfigurations True $ \_ _ _ ->
+    withDefConfigurations NMMustBeJust $ \_ _ _ ->
         describe "Client.Txp.Util" $ do
             describe "createMTx" $ createMTxSpec
     -- Test with configuration that does not require NetworkMagic
     -- in addresses (mainnet / staging)
-    withDefConfigurations False $ \_ _ _ ->
+    withDefConfigurations NMMustBeNothing $ \_ _ _ ->
         describe "Client.Txp.Util" $ do
             describe "createMTx" $ createMTxSpec
 
