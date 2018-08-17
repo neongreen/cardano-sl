@@ -1,4 +1,4 @@
-{-# LANGUAGE RecordWildCards, NamedFieldPuns #-}
+{-# LANGUAGE BangPatterns, RecordWildCards, NamedFieldPuns #-}
 module ChainExperiment2 where
 
 -- import Data.Word
@@ -270,6 +270,20 @@ chainBackwardsFrom blocks bid =
       Nothing    -> []
       Just (b,_) -> b : chainBackwardsFrom blocks (prevBlockId b)
 
+-- |
+-- @'chainBackwardsFrom'@ returns a list of blocks ordered from newest to
+-- oldest.
+invChainBackwardFrom
+    :: Map BlockId (Block, Maybe BlockId)
+    -> Bool
+invChainBackwardFrom blocks = 
+    all (\bid -> go (chainBackwardsFrom blocks bid)) (Map.keys blocks)
+    where
+    go :: [Block] -> Bool
+    go []  = True
+    go [_] = True
+    go (x : y : ys) = prevBlockId x == blockId y && go (y : ys)
+
 chainBackwardsFromTo
     :: Map BlockId (Block, Maybe BlockId)
     -> BlockId
@@ -300,13 +314,24 @@ chainBackwardsFrom' blocks bid =
 chainForwardFrom :: Map BlockId (Block, Maybe BlockId)
                  -> BlockId
                  -> [Block] -- ^ oldest first
-chainForwardFrom blocks blockId = go blockId id
+chainForwardFrom blocks blockId = go blockId []
     where
-    go :: BlockId -> ([Block] -> r) -> r
-    go bid k = case Map.lookup bid blocks of
-        Nothing                 -> k []
-        Just (block, Nothing)   -> k [block]
-        Just (block, Just bid') -> go bid' (k . (block :))
+    go :: BlockId -> [Block] -> [Block]
+    go bid !acu = case Map.lookup bid blocks of
+        Nothing                 -> []
+        Just (block, Nothing)   -> [block]
+        Just (block, Just bid') -> go bid' (block : acu)
+
+-- |
+-- @'chainForwardFrom'@ returns a list of blocks ordered from  oldest to newest.
+invChainForwardForm
+    :: Map BlockId (Block, Maybe BlockId)
+    -> Bool
+invChainForwardForm blocks = all (\blockId -> go $ chainForwardFrom blocks blockId) (Map.keys blocks)
+    where
+    go []  = True
+    go [_] = True
+    go (x : y : ys) = blockId x == prevBlockId y && go (y : ys)
 
 --
 -- The abstraction function
