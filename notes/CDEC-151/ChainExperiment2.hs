@@ -823,3 +823,12 @@ improveReaderState
 --
 -- Could pick a specific flush policy but would like to check that an arbitrary
 -- valid policy is still ok.
+
+main :: IO ()
+main = do
+    quickCheck prop_TestChain
+    quickCheck prop_TestChainAndUpdates
+    quickCheck prop_emptyChainState
+    quickCheck (\(TestVolatile v) -> invChainState (ChainState v))
+    quickCheck prop_addBlock
+    quickCheck prop_switchFork
