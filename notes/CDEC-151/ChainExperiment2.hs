@@ -1,14 +1,20 @@
-{-# LANGUAGE BangPatterns, RecordWildCards, NamedFieldPuns #-}
+{-# LANGUAGE BangPatterns        #-}
+{-# LANGUAGE RecordWildCards     #-}
+{-# LANGUAGE NamedFieldPuns      #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 module ChainExperiment2 where
 
 -- import Data.Word
-import Data.List (foldl', intersect, tails)
+import Data.Ord (Down (..))
+import Data.List (foldl', intersect, sortOn, tails)
 import Data.Hashable
 import qualified Data.Map as Map
 import           Data.Map (Map)
 import           Data.Maybe (fromMaybe)
+import           Data.Semigroup (Max (..))
 
 -- import Control.Applicative
+import Control.Monad (replicateM)
 
 import Test.QuickCheck
 
@@ -90,9 +96,10 @@ genBlock blockid slot = do
     return (mkBlock blockid slot payload)
 
 genNBlocks :: Int -> BlockId -> Slot -> Gen [Block]
-genNBlocks 1 blockid0 slot0 = (:[]) <$> genBlock blockid0 slot0
-genNBlocks n blockid0 slot0 = do
-    c@(b':_) <- genNBlocks (n-1) blockid0 slot0
+genNBlocks 0 _       _    = return []
+genNBlocks 1 blockid slot = (:[]) <$> genBlock blockid slot
+genNBlocks n blockid slot = do
+    c@(b':_) <- genNBlocks (n-1) blockid slot
     b        <- genBlock (blockId b') (blockSlot b' + 1)
     return (b:c)
 
@@ -210,6 +217,80 @@ data Volatile = Volatile
                   (Maybe BlockId) -- ^ current tip, or empty
   deriving (Eq, Show)
 
+newtype TestVolatile = TestVolatile { runTestVolatile :: Volatile }
+    deriving (Show)
+
+instance Arbitrary TestVolatile where
+    shrink (TestVolatile (Volatile blocks _)) =
+      case [b | (b, Nothing) <- Map.elems blocks ] of
+        []     -> []
+        [tip]  ->
+          let as = fromTip tip
+              -- split the @as@ tine into two unequal halfs ;)
+          in case splitAt (length as `div` 2) as of
+              ([], [])                 -> []
+              ([], tine@((_, (tip, _)) : _))  ->
+                [TestVolatile $ Volatile (Map.fromList tine) (Just $ blockId tip)]
+              (tine@((_, (tip, _)) : _), [])  ->
+                [TestVolatile $ Volatile (Map.fromList tine) (Just $ blockId tip)]
+              (tine@((_, (tip, _)) : _), tine'@((_, (tip', _)) : _))  ->
+                [ TestVolatile $ Volatile (Map.fromList tine)  (Just $ blockId tip)
+                , TestVolatile $ Volatile (Map.fromList tine') (Just $ blockId tip')
+                ]
+        -- return a list of all tines
+        tips  -> map (\b -> TestVolatile $ Volatile (Map.fromList (fromTip b)) (Just $ blockId b)) tips
+
+      where
+      fromTip :: Block -> [(BlockId, (Block, Maybe BlockId))]
+      fromTip b = map (\a -> (blockId (fst a), a)) $ chainBackwardsFrom' blocks (blockId b)
+
+    arbitrary = sized $ \maxTine ->
+        sized $ \maxForks -> do
+            bot <- genBlock 0 0
+            blocks <- genVolatile maxTine maxForks [(bot, Nothing)]
+            let tipId = case blocks of
+                    []         -> Nothing
+                    (b, _) : _ -> Just (blockId b)
+            return $ TestVolatile $ Volatile (Map.fromList $ map (\(b, t) -> (blockId b, (b, t))) blocks) tipId
+        where
+
+        genVolatile :: Int -> Int -> [(Block, Maybe BlockId)] -> Gen [(Block, Maybe BlockId)]
+        genVolatile 0      _        bs = return bs
+        genVolatile _      0        bs = return bs
+        genVolatile maxLen maxForks v =
+            case v of
+                []       -> error "genVolatile: unexpected empty volatile fork"
+                tip : bs -> do
+                    fork <- genFork maxLen maxForks (fst tip)
+                    case fork of
+                        []       -> return (tip : bs)
+                        [] : _   -> return (tip : bs)
+                        tine : _ -> genVolatile (max 0 (maxLen - length tine)) maxForks
+                            $ (concat fork) ++ ((fst tip, Just $ blockId $ fst $ last tine) : bs)
+
+        genFork
+            :: Int  -- ^ length of a longest tine
+            -> Int  -- ^ number of forks
+            -> Block
+            -> Gen [[(Block, Maybe BlockId)]]
+        genFork 0      _        _     = return []
+        genFork maxLen maxForks block = do
+            tineLen   <- choose (0, maxLen)
+            tineForks <- choose (1, maxForks)
+            
+            forks <- replicateM tineForks $
+                genTine tineLen (blockId block) (blockSlot block + 1)
+
+            return $ sortOn (Down . length) forks
+
+        genTine :: Int -- ^ maximal length of a tine
+                -> BlockId
+                -> Slot
+                -> Gen [(Block, Maybe BlockId)]
+        genTine 0      _   _    = return []
+        genTine tineLen bid slot = do
+            bs <- genNBlocks tineLen bid slot
+            return $ zip bs (Nothing : map (Just . blockId) bs)
 
 --
 -- The data invariants
