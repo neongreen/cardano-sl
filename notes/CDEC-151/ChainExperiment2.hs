@@ -313,32 +313,52 @@ invVolatile (Volatile blocks (Just tip)) =
         case Map.lookup tip blocks of
           Just (_, Nothing) -> True; _ -> False
 
-        -- There is only one tip
-      , length [ () | (_, Nothing) <- Map.elems blocks ] == 1
+        -- There might be many tines in the volatile fork, and the tip must be
+        -- end one of the tines.
+      , elem tip [ blockId b | (b, Nothing) <- Map.elems blocks ]
 
-        -- all blocks have the right key
+        -- Tip must belong to the longest tine.
+      , let tipTineLen = length $ chainBackwardsFrom blocks tip
+        in tipTineLen >=
+            getMax (foldMap Max
+                      [ length (chainBackwardsFrom blocks (blockId tip'))
+                      | (tip', Nothing) <- Map.elems blocks ])
+
+        -- All blocks have the right key.
       , and [ b == b' | (b, (Block{blockId = b'}, _)) <- Map.toList blocks ]
 
-        -- There is only one dangling back pointer
+        -- There is only one dangling back pointer.
       , length [ () | (b, _) <- Map.elems blocks
                     , prevBlockId b `Map.notMember` blocks ] == 1
 
         -- Back pointers have to be consistent with the forward pointer:
         -- following a back pointer gets a block that points forward to the same
-      , and [ case Map.lookup (prevBlockId b) blocks of
-                Nothing                               -> True
-                Just (_, Just bid) | bid == blockId b -> True
-                _                                     -> False
-            | (b, _) <- Map.elems blocks ]
+        --
+        -- NOTE: this property will not hold if there is a fork inside `blocks`
+        --
+        --      *
+        --      |
+        -- b *  * <- backward from b and then forward
+        --    \ | 
+        --      *
+        --      |
+      {--
+        - , and [ case Map.lookup (prevBlockId b) blocks of
+        -           Nothing                               -> True
+        -           Just (_, Just bid) | bid == blockId b -> True
+        -           _                                     -> False
+        -       | (b, _) <- Map.elems blocks ]
+        --}
 
         -- Forward pointers have to be consistent with the back pointer:
-        -- following a forward pointer gets a block that points back to the same
+        -- following a forward pointer gets a block that points back to the
+        -- same.
       , and [ case Map.lookup bid' blocks of
                 Just (b',_) | prevBlockId b' == blockId b -> True
                 _                                         -> False
             | (b, Just bid') <- Map.elems blocks ]
 
-        -- The chain arising must form a valid chain fragment
+        -- The chain arising must form a valid chain fragment.
       , validChainFragment (chainBackwardsFrom blocks tip)
 
       ]
@@ -443,7 +463,6 @@ emptyVolatile  = Volatile Map.empty Nothing
 prop_emptyChainState :: Bool
 prop_emptyChainState = invChainState emptyChainState
                     && absChainState emptyChainState == []
-
 
 --
 -- Step 2: adding single blocks
