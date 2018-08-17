@@ -299,6 +299,50 @@ Client/Txp/UtilSpec.hs|CreateRedemptionTxParams|Same module|
 |Lrc/Context.hs|LrcSyncData | Same module|
 |BatchOp.hs|DB |db/src/Pos/DB/Rocks/Types.hs|
 
+## `explorer` package
+### File path prefix: src/Pos/Explorer/
+
+| File | Types | Type Definition Location |
+| --- | --- | ---|
+|Txp/Common.hs|UnsafeTx |src/Pos/Core/Txp/Tx.hs|
+|Txp/Toil/Logic.hs|BalanceUpdate |Same module|
+|Txp/Toil/Logic.hs|UnsafeTx |src/Pos/Core/Txp/Tx.hs|
+|ExplorerMode.hs|TestParams |generator/src/Test/Pos/Block/Logic/Mode.hs|
+|ExplorerMode.hs|LrcContext |db/src/Pos/DB/Lrc/Context.hs|
+|ExplorerMode.hs|GStateContext DBSum|db/src/Pos/DB/Sum.hs|
+|ExplorerMode.hs|ExplorerTestContext |Same module|
+|Socket/App.hs|NotifierSettings|Same module|
+|Socket/Methods.hs|SubscriptionParam|Same module|
+|Socket/Methods.hs|TxExtra |explorer/src/Pos/Explorer/Core/Types.hs|
+|Web/ClientTypes.hs|Undo|src/Pos/Chain/Block/Types.hs|
+|Web/ClientTypes.hs|CBlockEntry |Same module|
+|Web/ClientTypes.hs|CTxEntry |Same module|
+|Web/ClientTypes.hs|CBlockSummary |Same module|
+|Web/ClientTypes.hs|TxInternal|Same module|
+|Web/ClientTypes.hs|CTxBrief |Same module|
+|Web/Server.hs|Address |core/src/Pos/Core/Common/Address.hs|
+|Web/Server.hs|AddrType (ATUnknown) {}|core/src/Pos/Core/Common/AddrSpendingData.hs|
+|Web/Server.hs|GenesisSummaryInternal |Same module|
+|Web/Server.hs|CGenesisAddressInfo|explorer/src/Pos/Explorer/Web/ClientTypes.hs|
+|Web/Server.hs|TxExtra |explorer/src/Pos/Explorer/Core/Types.hs|
+
+### File path prefix: src/explorer/
+
+| File | Types | Type Definition Location |
+| --- | --- | ---|
+|ExplorerNodeOptions.hs|ExplorerArgs|Same module|
+|Main.hs|CommonNodeArgs|lib/src/Pos/Client/CLI/NodeOptions.hs|
+|Main.hs|ExplorerArgs|explorer/src/explorer/ExplorerNodeOptions.hs|
+|Main.hs|NodeResources |lib/src/Pos/Launcher/Resource.hs|
+|Main.hs|NodeContext lib/src/Pos/Context/Context.hs|
+
+### File path prefix: none
+
+| File | Types | Type Definition Location |
+| --- | --- | ---|
+|src/purescript/Main.hs|Args |/explorer/src/purescript/PSOptions.hs|
+
+
 ## `infra` package
 ### File path prefix: src/Pos/Infra/
 
