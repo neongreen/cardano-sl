@@ -1,10 +1,8 @@
-{-# LANGUAGE RecordWildCards #-}
-
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 
 -- | Canonical encoding of 'GenesisData'.
 
-module Pos.Core.Genesis.Canonical
+module Pos.Util.Json.Canonical
        ( SchemaError(..)
        ) where
 
@@ -33,9 +31,9 @@ data SchemaError = SchemaError
     } deriving (Show)
 
 instance Buildable SchemaError where
-    build SchemaError{..} = mconcat
-        [ "expected " <> Builder.fromText seExpected
-        , case seActual of
+    build se = mconcat
+        [ "expected " <> Builder.fromText (seExpected se)
+        , case seActual se of
             Nothing     -> mempty
             Just actual -> " but got " <> Builder.fromText actual
         ]
