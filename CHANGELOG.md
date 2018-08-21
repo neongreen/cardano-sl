@@ -7,11 +7,28 @@
 
 ### Fixes
 
+- #### Make productionReporter more robust
+  Add exception handling code in reporting exception handler, to prevent IOExceptions from killing
+  the main thread. This was noticed when the network connection was interrupted, and the reporter
+  died when it tried to report over the down network. (CDEC-470 / [PR 3365])
+
+[PR 3365]: https://github.com/input-output-hk/cardano-sl/pull/3365
+
+- Improve type safety (and as a consequence, API documentation) of account indexes (CBR-306)
+
 ### Improvements
+
+- Friendly error mistakes from deserializing invalid addresses instead of brutal 500 (CBR-283)
+
+- **[API BREAKING CHANGE]** Add `walletId` to `WalletAlreadyExists` WalletLayerError (CBR-254)
+
+- Small refactor of wallet Errors implementation to be more maintainable (CBR-26)
 
 ### Specifications
 
 ### Documentation
+
+- Make an inventory of existing wallet errors and exceptions (CBR-307)
 
 
 ## Cardano SL 1.3.0

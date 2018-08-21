@@ -44,15 +44,14 @@ import qualified Cardano.Wallet.Kernel.Mode as Kernel.Mode
 import           Cardano.Wallet.Kernel (PassiveWallet)
 import qualified Cardano.Wallet.Kernel as Kernel
 import qualified Cardano.Wallet.Kernel.Keystore as Keystore
-import           Cardano.Wallet.Kernel.MonadDBReadAdaptor
-                     (newMonadDBReadAdaptor)
+import qualified Cardano.Wallet.Kernel.NodeStateAdaptor as NodeStateAdaptor
 import           Cardano.Wallet.Server.CLI (ChooseWalletBackend (..),
                      NewWalletBackendParams (..), WalletBackendParams (..),
                      WalletStartupOptions (..), getWalletNodeOptions,
                      walletDbPath, walletFlushDb, walletRebuildDb)
 import qualified Cardano.Wallet.Server.Plugins as Plugins
-import           Cardano.Wallet.WalletLayer (PassiveWalletLayer,
-                     bracketKernelPassiveWallet)
+import           Cardano.Wallet.WalletLayer (PassiveWalletLayer)
+import qualified Cardano.Wallet.WalletLayer.Kernel as WalletLayer.Kernel
 
 -- | Default logger name when one is not provided on the command line
 defaultLoggerName :: LoggerName
@@ -120,22 +119,20 @@ actionWithNewWallet :: (HasConfigurations, HasCompileInfo)
                     -> TxpConfiguration
                     -> SscParams
                     -> NodeParams
+                    -> NtpConfiguration
                     -> NewWalletBackendParams
                     -> IO ()
-actionWithNewWallet pm txpConfig sscParams nodeParams params =
+actionWithNewWallet pm txpConfig sscParams nodeParams ntpConfig params =
     bracketNodeResources
         nodeParams
         sscParams
         (txpGlobalSettings pm txpConfig)
         (initNodeDBs pm epochSlots) $ \nr -> do
-      -- TODO: Will probably want to extract some parameters from the
-      -- 'NewWalletBackendParams' to construct or initialize the wallet
-
-      -- TODO(ks): Currently using non-implemented layer for wallet layer.
+      ntpStatus <- withNtpClient (ntpClientSettings ntpConfig)
       userSecret <- readTVarIO (ncUserSecret $ nrContext nr)
-      let rocksDB = newMonadDBReadAdaptor (nrDBs nr)
+      let nodeState = NodeStateAdaptor.newNodeStateAdaptor nr ntpStatus
       liftIO $ Keystore.bracketLegacyKeystore userSecret $ \keystore -> do
-          bracketKernelPassiveWallet logMessage' keystore rocksDB $ \walletLayer passiveWallet -> do
+          WalletLayer.Kernel.bracketPassiveWallet logMessage' keystore nodeState $ \walletLayer passiveWallet -> do
             Kernel.init passiveWallet
             Kernel.Mode.runWalletMode pm
                                       txpConfig
@@ -183,7 +180,7 @@ startEdgeNode wso =
         WalletLegacy legacyParams ->
           actionWithWallet pm txpConfig sscParams nodeParams ntpConfig legacyParams
         WalletNew newParams ->
-          actionWithNewWallet pm txpConfig sscParams nodeParams newParams
+          actionWithNewWallet pm txpConfig sscParams nodeParams ntpConfig newParams
   where
     getParameters :: HasConfigurations
                   => TxpConfiguration

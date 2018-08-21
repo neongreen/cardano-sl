@@ -2,7 +2,6 @@
      A @Plugin@ is essentially a set of actions which will be run in
      a particular monad, at some point in time.
 -}
-{-# LANGUAGE LambdaCase    #-}
 {-# LANGUAGE TupleSections #-}
 
 module Cardano.Wallet.Server.Plugins (
@@ -20,7 +19,8 @@ module Cardano.Wallet.Server.Plugins (
 import           Universum
 
 import           Cardano.Wallet.API as API
-import qualified Cardano.Wallet.API.V1.Errors as V1
+import           Cardano.Wallet.API.V1.Headers (applicationJson)
+import qualified Cardano.Wallet.API.V1.Types as V1
 import           Cardano.Wallet.Kernel (PassiveWallet)
 import qualified Cardano.Wallet.Kernel.Diffusion as Kernel
 import qualified Cardano.Wallet.Kernel.Mode as Kernel
@@ -30,7 +30,8 @@ import           Cardano.Wallet.Server.CLI (NewWalletBackendParams (..),
                      RunMode, WalletBackendParams (..), isDebugMode,
                      walletAcidInterval, walletDbOptions)
 import           Cardano.Wallet.WalletLayer (ActiveWalletLayer,
-                     PassiveWalletLayer, bracketKernelActiveWallet)
+                     PassiveWalletLayer)
+import qualified Cardano.Wallet.WalletLayer.Kernel as WalletLayer.Kernel
 import qualified Pos.Wallet.Web.Error.Types as V0
 
 import           Control.Exception (fromException)
@@ -168,7 +169,7 @@ legacyWalletBackend pm txpConfig WalletBackendParams {..} ntpStatus = pure $ \di
     handleV1Errors :: SomeException -> Maybe Response
     handleV1Errors se =
         let reify (we :: V1.WalletError) =
-                responseLBS (V1.toHttpStatus we) [V1.applicationJson] .  encode $ we
+                responseLBS (V1.toHttpErrorStatus we) [applicationJson] .  encode $ we
         in fmap reify (fromException se)
 
     -- Handles domain-specific errors coming from the V0 API, but rewraps it
@@ -184,13 +185,18 @@ legacyWalletBackend pm txpConfig WalletBackendParams {..} ntpStatus = pure $ \di
                     V0.RequestError _  -> err
                     V0.InternalError _ -> V0.RequestError "InternalError"
                     V0.DecodeError _   -> V0.RequestError "DecodeError"
-            reify (re :: V0.WalletError) = V1.UnknownError (sformat build . maskSensitive $ re)
-        in fmap (responseLBS badRequest400 [V1.applicationJson] .  encode . reify) (fromException se)
+            reify :: V0.WalletError -> V1.WalletError
+            reify = V1.UnknownError . sformat build . maskSensitive
+        in fmap (responseLBS badRequest400 [applicationJson] .  encode . reify) (fromException se)
 
     -- Handles any generic error, trying to prevent internal exceptions from leak outside.
     handleGenericError :: SomeException -> Response
     handleGenericError _ =
-        responseLBS badRequest400 [V1.applicationJson] .  encode $ V1.UnknownError "Something went wrong."
+        let
+            unknownV1Error = V1.UnknownError "Something went wrong."
+        in
+            responseLBS badRequest400 [applicationJson] $ encode unknownV1Error
+
 
 -- | A 'Plugin' to start the wallet REST server
 --
@@ -203,7 +209,7 @@ walletBackend protocolMagic (NewWalletBackendParams WalletBackendParams{..}) (pa
     pure $ \diffusion -> do
         env <- ask
         let diffusion' = Kernel.fromDiffusion (lower env) diffusion
-        bracketKernelActiveWallet protocolMagic passiveLayer passiveWallet diffusion' $ \active _ -> do
+        WalletLayer.Kernel.bracketActiveWallet protocolMagic passiveLayer passiveWallet diffusion' $ \active _ -> do
           ctx <- view shutdownContext
           let
             portCallback :: Word16 -> IO ()

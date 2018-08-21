@@ -1,4 +1,5 @@
 {-# LANGUAGE AllowAmbiguousTypes #-}
+{-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE TypeFamilies        #-}
 
 -- | This module does some hard work related to block processing
@@ -31,14 +32,13 @@ import           Serokell.Util (Color (Red), colorize)
 import           Serokell.Util.Verify (formatAllErrors, verResToMonadError)
 import           System.Wlog (WithLogger)
 
-import           Pos.Chain.Block (Blund, HasSlogGState, SlogUndo (..),
-                     Undo (..), verifyBlocks)
+import           Pos.Chain.Block (Block, Blund, HasSlogGState, SlogUndo (..),
+                     Undo (..), genBlockLeaders, headerHash, headerHashG,
+                     mainBlockSlot, prevBlockL, verifyBlocks)
 import           Pos.Chain.Update (HasUpdateConfiguration,
                      lastKnownBlockVersion)
 import           Pos.Core (FlatSlotId, blkSecurityParam, difficultyL,
                      epochIndexL, flattenSlotId)
-import           Pos.Core.Block (Block, genBlockLeaders, headerHash,
-                     headerHashG, mainBlockSlot, prevBlockL)
 import           Pos.Core.Chrono (NE, NewestFirst (getNewestFirst),
                      OldestFirst (..), toOldestFirst, _OldestFirst)
 import           Pos.Core.Exception (assertionFailed, reportFatalError)

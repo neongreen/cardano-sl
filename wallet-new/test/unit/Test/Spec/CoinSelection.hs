@@ -25,7 +25,7 @@ import qualified Text.Tabl as Tabl
 
 import           Pos.Binary.Class (Bi (encode), toLazyByteString)
 import qualified Pos.Chain.Txp as Core
-import           Pos.Core (Coeff (..), TxSizeLinear (..))
+import           Pos.Core (Coeff (..), TxSizeLinear (..), unsafeIntegerToCoin)
 import qualified Pos.Core as Core
 import           Pos.Core.Attributes (mkAttributes)
 import           Pos.Crypto (SecretKey)
@@ -42,7 +42,7 @@ import           Cardano.Wallet.Kernel.CoinSelection (CoinSelFinalResult (..),
 import           Cardano.Wallet.Kernel.CoinSelection.FromGeneric
                      (estimateCardanoFee, estimateHardMaxTxInputs,
                      estimateMaxTxInputs)
-import           Cardano.Wallet.Kernel.Util (paymentAmount, utxoBalance,
+import           Cardano.Wallet.Kernel.Util.Core (paymentAmount, utxoBalance,
                      utxoRestrictToInputs)
 import           Pos.Crypto.Signing.Safe (fakeSigner)
 import           Test.Pos.Configuration (withDefConfiguration)
@@ -138,7 +138,7 @@ renderUtxoAndPayees utxo outputs =
                                    (sortedPayees $ toList outputs) <> footer
 
       footer :: [Row]
-      footer = ["Total", "Total"] : [[T.pack . show . Core.getCoin . utxoBalance $ utxo
+      footer = ["Total", "Total"] : [[T.pack . show . utxoBalance $ utxo
                                     , T.pack . show . Core.getCoin . paymentAmount $ outputs
                                     ]]
 
@@ -159,7 +159,7 @@ renderTx payees utxo tx =
       txOutputs = Core._txOutputs . Core.taTx $ tx
 
       pickedInputs :: Core.Utxo
-      pickedInputs = utxoRestrictToInputs (Set.fromList $ toList . Core._txInputs . Core.taTx $ tx) utxo
+      pickedInputs = utxo `utxoRestrictToInputs` (Set.fromList $ toList . Core._txInputs . Core.taTx $ tx)
 
       alignments :: [Tabl.Alignment]
       alignments = map (const Tabl.AlignCentre) cells
@@ -186,9 +186,9 @@ renderTx payees utxo tx =
           in header : (subTable1 `mergeRows` subTable2) <> footer
 
       footer :: [Row]
-      footer = replicate 4 "Total" : [[T.pack . show . Core.getCoin . utxoBalance $ utxo
+      footer = replicate 4 "Total" : [[T.pack . show . utxoBalance $ utxo
                                      , T.pack . show . Core.getCoin . paymentAmount $ payees
-                                     , T.pack . show . Core.getCoin . utxoBalance $ pickedInputs
+                                     , T.pack . show . utxoBalance $ pickedInputs
                                      , T.pack . show . Core.getCoin . paymentAmount $ txOutputs
                                      ]]
 
@@ -324,7 +324,7 @@ feeWasPayed SenderPaysFee originalUtxo originalOutputs tx =
                     T.unpack (renderTx originalOutputs originalUtxo tx) <>
                     "\n\n"
               )
-              (< utxoBalance originalUtxo)
+              (< unsafeIntegerToCoin (utxoBalance originalUtxo))
               (paymentAmount txOutputs)
 feeWasPayed ReceiverPaysFee _ originalOutputs tx =
     let txOutputs = Core._txOutputs . Core.taTx $ tx
@@ -475,7 +475,7 @@ mkTx :: Core.ProtocolMagic
      -> [Core.TxOutAux]
      -- ^ A list of change addresess, in the form of 'TxOutAux'(s).
      -> Gen (Either CoinSelHardErr Core.TxAux)
-mkTx pm key = mkStdTx pm (\_addr -> Right (fakeSigner key))
+mkTx pm key = mkStdTx pm return (\_addr -> Right (fakeSigner key))
 
 
 payRestrictInputsTo :: Word64

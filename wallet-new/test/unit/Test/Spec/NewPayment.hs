@@ -1,5 +1,11 @@
 {-# LANGUAGE TypeApplications #-}
-module Test.Spec.NewPayment (spec) where
+module Test.Spec.NewPayment (
+      spec
+
+    -- Public to be used by other testing modules.
+    , Fixture (..)
+    , withFixture
+  ) where
 
 import           Universum
 
@@ -48,6 +54,7 @@ import qualified Cardano.Wallet.Kernel.Transactions as Kernel
 import           Cardano.Wallet.Kernel.Types (AccountId (..), WalletId (..))
 import           Cardano.Wallet.WalletLayer (ActiveWalletLayer)
 import qualified Cardano.Wallet.WalletLayer as WalletLayer
+import qualified Cardano.Wallet.WalletLayer.Kernel.Conv as Kernel.Conv
 
 import qualified Test.Spec.Fixture as Fixture
 import           Util.Buildable (ShowThroughBuild (..))
@@ -145,7 +152,7 @@ withPayment initialBalance toPay action = do
         let (AccountIdHdRnd hdAccountId)  = fixtureAccountId
         let (HdRootId (InDb rootAddress)) = fixtureHdRootId
         let sourceWallet = V1.WalletId (sformat build rootAddress)
-        let accountIndex = hdAccountId ^. hdAccountIdIx . to getHdAccountIx
+        let accountIndex = Kernel.Conv.toAccountId hdAccountId
         let destinations =
                 fmap (\(addr, coin) -> V1.PaymentDistribution (V1.V1 addr) (V1.V1 coin)
                      ) fixturePayees
@@ -181,13 +188,13 @@ spec = describe "NewPayment" $ do
                              , csoInputGrouping     = IgnoreGrouping
                              }
                     let (AccountIdHdRnd hdAccountId) = fixtureAccountId
-                    (res, _) <- liftIO (Kernel.newTransaction aw
-                                                              mempty
-                                                              opts
-                                                              hdAccountId
-                                                              fixturePayees
-                                       )
-                    liftIO ((bimap STB STB res) `shouldSatisfy` isRight)
+                    res <- liftIO (Kernel.newTransaction aw
+                                                         mempty
+                                                         opts
+                                                         hdAccountId
+                                                         fixturePayees
+                                  )
+                    liftIO ((bimap STB (const $ STB ()) res) `shouldSatisfy` isRight)
 
         prop "newTransaction works (ReceiverPaysFee)" $ withMaxSuccess 50 $ do
             monadicIO $
@@ -197,13 +204,13 @@ spec = describe "NewPayment" $ do
                              , csoInputGrouping     = IgnoreGrouping
                              }
                     let (AccountIdHdRnd hdAccountId) = fixtureAccountId
-                    (res, _) <- liftIO (Kernel.newTransaction aw
-                                                              mempty
-                                                              opts
-                                                              hdAccountId
-                                                              fixturePayees
-                                       )
-                    liftIO ((bimap STB STB res) `shouldSatisfy` isRight)
+                    res <- liftIO (Kernel.newTransaction aw
+                                                         mempty
+                                                         opts
+                                                         hdAccountId
+                                                         fixturePayees
+                                  )
+                    liftIO ((bimap STB (const $ STB ()) res) `shouldSatisfy` isRight)
 
     describe "Generating a new payment (Servant)" $ do
 

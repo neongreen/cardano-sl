@@ -1,4 +1,5 @@
-{-# LANGUAGE Rank2Types #-}
+{-# LANGUAGE Rank2Types      #-}
+{-# LANGUAGE RecordWildCards #-}
 
 module Pos.Core.Configuration
        ( ConfigurationError (..)
@@ -31,12 +32,12 @@ import           Pos.Core.Genesis (GenesisData (..), GenesisDelegation,
                      GenesisSpec (..),
                      genesisProtocolConstantsToProtocolConstants,
                      mkGenesisDelegation)
-import           Pos.Core.Genesis.Canonical (SchemaError)
 import           Pos.Core.Genesis.Generate (GeneratedGenesisData (..),
                      generateGenesisData)
 import           Pos.Core.Slotting (Timestamp)
 import           Pos.Crypto.Configuration as E
 import           Pos.Crypto.Hashing (Hash, hashRaw, unsafeHash)
+import           Pos.Util.Json.Canonical (SchemaError)
 import           Pos.Util.Util (leftToPanic)
 
 -- | Coarse catch-all configuration constraint for use by depending modules.

@@ -1,4 +1,5 @@
 {-# LANGUAGE AllowAmbiguousTypes #-}
+{-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE TypeFamilies        #-}
 
 -- | Delegation-related verify/apply/rollback part.
@@ -25,6 +26,9 @@ import           Serokell.Util (listJson, mapJson)
 import           System.Wlog (WithLogger, logDebug)
 import           UnliftIO (MonadUnliftIO)
 
+import           Pos.Chain.Block (Block, ComponentBlock (..), gbHeader,
+                     headerHash, mainBlockDlgPayload, mainBlockSlot,
+                     prevBlockL)
 import           Pos.Chain.Delegation (CedeModifier (..), DlgBlund,
                      DlgEdgeAction (..), DlgPayload (getDlgPayload),
                      DlgUndo (..), MonadCede (..), MonadCedeRead (..),
@@ -34,9 +38,6 @@ import           Pos.Chain.Delegation (CedeModifier (..), DlgBlund,
 import           Pos.Chain.Lrc (RichmenSet)
 import           Pos.Core (EpochIndex (..), StakeholderId, addressHash,
                      epochIndexL, siEpoch)
-import           Pos.Core.Block (Block, ComponentBlock (..), gbHeader,
-                     headerHash, mainBlockDlgPayload, mainBlockSlot,
-                     prevBlockL)
 import           Pos.Core.Chrono (NE, NewestFirst (..), OldestFirst (..))
 import           Pos.Crypto (ProtocolMagic, ProxySecretKey (..), shortHashF)
 import           Pos.DB (DBError (DBMalformed), MonadDBRead, SomeBatchOp (..))

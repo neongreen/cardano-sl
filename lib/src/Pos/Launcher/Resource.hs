@@ -1,7 +1,8 @@
-{-# LANGUAGE CPP            #-}
-{-# LANGUAGE KindSignatures #-}
-{-# LANGUAGE Rank2Types     #-}
-{-# LANGUAGE TypeOperators  #-}
+{-# LANGUAGE CPP             #-}
+{-# LANGUAGE KindSignatures  #-}
+{-# LANGUAGE Rank2Types      #-}
+{-# LANGUAGE RecordWildCards #-}
+{-# LANGUAGE TypeOperators   #-}
 
 -- | Resources used by node and ways to deal with them.
 
@@ -284,6 +285,8 @@ allocateNodeContext ancd txpSettings ekgStore = do
     logDebug "Created slotting context"
     putSlotting ncSlottingVar ncSlottingContext
     logDebug "Filled slotting future"
+    ncUserPublic <- newTVarIO $ npUserPublic
+    logDebug "Created UserPublic variable"
     ncUserSecret <- newTVarIO $ npUserSecret
     logDebug "Created UserSecret variable"
     ncBlockRetrievalQueue <- liftIO $ newTBQueueIO blockRetrievalQueueSize

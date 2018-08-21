@@ -1,11 +1,10 @@
-{-# LANGUAGE TemplateHaskell       #-}
-{-# LANGUAGE TypeApplications      #-}
-{-# LANGUAGE TypeSynonymInstances  #-}
-
 {-# LANGUAGE FlexibleContexts      #-}
 {-# LANGUAGE FlexibleInstances     #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE RecordWildCards       #-}
+{-# LANGUAGE TemplateHaskell       #-}
+{-# LANGUAGE TypeApplications      #-}
+{-# LANGUAGE TypeSynonymInstances  #-}
 
 module Types ( initBlockchainAnalyser
              , DBFolderStat
@@ -18,8 +17,8 @@ import           Universum
 import           Control.Lens (makeLensesWith)
 import qualified Control.Monad.Reader as Mtl
 
+import           Pos.Chain.Block (Block, HeaderHash, prevBlockL)
 import           Pos.Core (HasConfiguration)
-import           Pos.Core.Block (Block, HeaderHash, prevBlockL)
 import           Pos.DB (MonadDBRead (..))
 import qualified Pos.DB as DB
 import qualified Pos.DB.Block as BDB
@@ -59,6 +58,7 @@ instance HasConfiguration => MonadDBRead BlockchainInspector where
     dbIterSource = DB.dbIterSourceDefault
     dbGetSerBlock = BDB.dbGetSerBlockRealDefault
     dbGetSerUndo = BDB.dbGetSerUndoRealDefault
+    dbGetSerBlund = BDB.dbGetSerBlundRealDefault
 
 prevBlock :: Block -> HeaderHash
 prevBlock = view prevBlockL

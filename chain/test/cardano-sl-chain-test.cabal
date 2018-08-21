@@ -14,11 +14,15 @@ cabal-version:       >=1.10
 library
   exposed-modules:     Test.Pos.Chain.Block.Arbitrary
                        Test.Pos.Chain.Block.Arbitrary.Generate
+                       Test.Pos.Chain.Block.Bi
+                       Test.Pos.Chain.Block.Gen
                        Test.Pos.Chain.Delegation.Arbitrary
                        Test.Pos.Chain.Lrc.Arbitrary
                        Test.Pos.Chain.Ssc.Arbitrary
                        Test.Pos.Chain.Ssc.Gen
                        Test.Pos.Chain.Ssc.Json
+                       Test.Pos.Chain.Txp.Gen
+                       Test.Pos.Chain.Txp.Json
                        Test.Pos.Chain.Update.Arbitrary
 
   other-modules:       Test.Pos.Chain.Update.Arbitrary.Core
@@ -26,6 +30,7 @@ library
   build-depends:       base
                      , bytestring
                      , cardano-crypto
+                     , cardano-sl-binary-test
                      , cardano-sl-binary
                      , cardano-sl-chain
                      , cardano-sl-core
@@ -33,6 +38,7 @@ library
                      , cardano-sl-crypto
                      , cardano-sl-crypto-test
                      , cardano-sl-util-test
+                     , containers
                      , formatting
                      , generic-arbitrary
                      , hedgehog
@@ -55,7 +61,6 @@ library
                        DefaultSignatures
                        NoImplicitPrelude
                        OverloadedStrings
-                       RecordWildCards
                        TypeApplications
                        TupleSections
                        ViewPatterns

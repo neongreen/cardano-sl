@@ -16,7 +16,6 @@ import           System.Random.MWC (GenIO, createSystemRandom, uniformR)
 
 import           Data.Acid (update)
 
-import           Pos.Core (mkCoin)
 import           Pos.Crypto (EncryptedSecretKey, PassPhrase)
 
 import           Cardano.Wallet.Kernel.DB.AcidState (CreateHdAccount (..), DB,
@@ -28,12 +27,13 @@ import           Cardano.Wallet.Kernel.DB.HdWallet.Create
                      (CreateHdAccountError (..), initHdAccount)
 import           Cardano.Wallet.Kernel.DB.HdWallet.Derivation
                      (HardeningMode (..), deriveIndex)
-import           Cardano.Wallet.Kernel.DB.InDb (InDb (..))
-import           Cardano.Wallet.Kernel.DB.Spec (Checkpoint (..), emptyPending)
+import           Cardano.Wallet.Kernel.DB.Spec (Checkpoint, initCheckpoint)
 import           Cardano.Wallet.Kernel.Internal (PassiveWallet, walletKeystore,
                      wallets)
 import qualified Cardano.Wallet.Kernel.Keystore as Keystore
 import           Cardano.Wallet.Kernel.Types (WalletId (..))
+
+import           Test.QuickCheck (Arbitrary (..), oneof)
 
 data CreateAccountError =
       CreateAccountUnknownHdRoot HdRootId
@@ -46,6 +46,9 @@ data CreateAccountError =
       -- ^ The available number of HD accounts in use is such that trying
       -- to find another random index would be too expensive.
     deriving Eq
+
+instance Arbitrary CreateAccountError where
+    arbitrary = oneof []
 
 instance Buildable CreateAccountError where
     build (CreateAccountUnknownHdRoot uRoot) =
@@ -135,13 +138,7 @@ createHdRndAccount _spendingPassword accountName _esk rootId pw = do
 
         -- | The first 'Checkpoint' known to this 'Account'.
         firstCheckpoint :: Checkpoint
-        firstCheckpoint = Checkpoint {
-              _checkpointUtxo        = InDb mempty
-            , _checkpointUtxoBalance = InDb (mkCoin 0)
-            , _checkpointPending     = emptyPending
-            , _checkpointBlockMeta   = mempty
-            }
-
+        firstCheckpoint = initCheckpoint mempty
 
 -- | Deletes an HD 'Account' from the data storage.
 deleteAccount :: HdAccountId

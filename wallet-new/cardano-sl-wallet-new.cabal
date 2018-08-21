@@ -26,7 +26,6 @@ library
                        Cardano.Wallet.API.Request.Sort
                        Cardano.Wallet.API.Response
                        Cardano.Wallet.API.Response.Filter.IxSet
-                       Cardano.Wallet.API.Response.Filter.Legacy
                        Cardano.Wallet.API.Response.JSend
                        Cardano.Wallet.API.Response.Sort.IxSet
                        Cardano.Wallet.API.Types
@@ -42,13 +41,17 @@ library
                        Cardano.Wallet.API.V1.Handlers
                        Cardano.Wallet.API.V1.Handlers.Accounts
                        Cardano.Wallet.API.V1.Handlers.Addresses
+                       Cardano.Wallet.API.V1.Handlers.Info
+                       Cardano.Wallet.API.V1.Handlers.Settings
                        Cardano.Wallet.API.V1.Handlers.Transactions
                        Cardano.Wallet.API.V1.Handlers.Wallets
+                       Cardano.Wallet.API.V1.Headers
                        Cardano.Wallet.API.V1.Info
                        Cardano.Wallet.API.V1.LegacyHandlers
                        Cardano.Wallet.API.V1.LegacyHandlers.Accounts
                        Cardano.Wallet.API.V1.LegacyHandlers.Addresses
                        Cardano.Wallet.API.V1.LegacyHandlers.Info
+                       Cardano.Wallet.API.V1.LegacyHandlers.Instances
                        Cardano.Wallet.API.V1.LegacyHandlers.Settings
                        Cardano.Wallet.API.V1.LegacyHandlers.Transactions
                        Cardano.Wallet.API.V1.LegacyHandlers.Wallets
@@ -63,10 +66,12 @@ library
                        Cardano.Wallet.API.V1.Types
                        Cardano.Wallet.API.V1.Wallets
                        Cardano.Wallet.Kernel
-                       Cardano.Wallet.Kernel.Actions
                        Cardano.Wallet.Kernel.Accounts
+                       Cardano.Wallet.Kernel.Actions
                        Cardano.Wallet.Kernel.Addresses
                        Cardano.Wallet.Kernel.BIP39
+                       Cardano.Wallet.Kernel.BListener
+                       Cardano.Wallet.Kernel.ChainState
                        Cardano.Wallet.Kernel.CoinSelection
                        Cardano.Wallet.Kernel.CoinSelection.FromGeneric
                        Cardano.Wallet.Kernel.CoinSelection.Generic
@@ -86,9 +91,9 @@ library
                        Cardano.Wallet.Kernel.DB.Read
                        Cardano.Wallet.Kernel.DB.Resolved
                        Cardano.Wallet.Kernel.DB.Spec
+                       Cardano.Wallet.Kernel.DB.Spec.Pending
                        Cardano.Wallet.Kernel.DB.Spec.Read
                        Cardano.Wallet.Kernel.DB.Spec.Update
-                       Cardano.Wallet.Kernel.DB.Spec.Util
                        Cardano.Wallet.Kernel.DB.Sqlite
                        Cardano.Wallet.Kernel.DB.TxMeta
                        Cardano.Wallet.Kernel.DB.TxMeta.Types
@@ -96,15 +101,19 @@ library
                        Cardano.Wallet.Kernel.DB.Util.IxSet
                        Cardano.Wallet.Kernel.Diffusion
                        Cardano.Wallet.Kernel.Internal
+                       Cardano.Wallet.Kernel.Invariants
                        Cardano.Wallet.Kernel.Keystore
                        Cardano.Wallet.Kernel.Mode
-                       Cardano.Wallet.Kernel.MonadDBReadAdaptor
+                       Cardano.Wallet.Kernel.NodeStateAdaptor
+                       Cardano.Wallet.Kernel.Pending
                        Cardano.Wallet.Kernel.PrefilterTx
+                       Cardano.Wallet.Kernel.Read
                        Cardano.Wallet.Kernel.Submission
                        Cardano.Wallet.Kernel.Submission.Worker
                        Cardano.Wallet.Kernel.Transactions
                        Cardano.Wallet.Kernel.Types
                        Cardano.Wallet.Kernel.Util
+                       Cardano.Wallet.Kernel.Util.Core
                        Cardano.Wallet.Kernel.Util.StrictStateT
                        Cardano.Wallet.Kernel.Wallets
                        Cardano.Wallet.LegacyServer
@@ -122,17 +131,19 @@ library
                        Cardano.Wallet.Util
 
                        Cardano.Wallet.WalletLayer
-                       Cardano.Wallet.WalletLayer.Types
                        Cardano.Wallet.WalletLayer.ExecutionTimeLimit
-                       -- * Useful for testing, especially in the fixture side.
                        Cardano.Wallet.WalletLayer.Kernel.Accounts
+                       Cardano.Wallet.WalletLayer.Kernel.Active
                        Cardano.Wallet.WalletLayer.Kernel.Addresses
+                       Cardano.Wallet.WalletLayer.Kernel.Conv
+                       Cardano.Wallet.WalletLayer.Kernel.Info
+                       Cardano.Wallet.WalletLayer.Kernel.Settings
+                       Cardano.Wallet.WalletLayer.Kernel.Transactions
                        Cardano.Wallet.WalletLayer.Kernel.Wallets
-
-  other-modules:       Cardano.Wallet.WalletLayer.Kernel
-                       Cardano.Wallet.WalletLayer.Legacy
+                       Cardano.Wallet.WalletLayer.Kernel
                        Cardano.Wallet.WalletLayer.Error
-                       Paths_cardano_sl_wallet_new
+
+  other-modules:       Paths_cardano_sl_wallet_new
   ghc-options:         -Wall
 
   build-depends:       base
@@ -141,6 +152,7 @@ library
                      , aeson-options
                      , aeson-pretty
                      , async
+                     , base58-bytestring
                      , beam-core
                      , beam-migrate
                      , beam-sqlite
@@ -178,7 +190,6 @@ library
                      , http-client-tls
                      , http-types
                      , ixset-typed
-                     , json-sop
                      , lens
                      , log-warper
                      , memory
@@ -328,6 +339,7 @@ executable wal-integr-test
                        Error
                        Util
                        WalletSpecs
+                       AccountSpecs
                        AddressSpecs
                        TransactionSpecs
                        QuickCheckSpecs
@@ -395,17 +407,20 @@ test-suite wallet-unit-tests
                       Test.Infrastructure.Generator
                       Test.Infrastructure.Genesis
                       Test.Spec.Accounts
+                      Test.Spec.BlockMetaScenarios
                       Test.Spec.CoinSelection
                       Test.Spec.CoinSelection.Generators
-                      Test.Spec.CreateAddress
-                      Test.Spec.CreateWallet
+                      Test.Spec.Addresses
                       Test.Spec.Fixture
+                      Test.Spec.GetTransactions
                       Test.Spec.Kernel
                       Test.Spec.Keystore
                       Test.Spec.Models
                       Test.Spec.NewPayment
                       Test.Spec.Submission
                       Test.Spec.Translation
+                      Test.Spec.TxMetaScenarios
+                      Test.Spec.Wallets
                       Test.Spec.WalletWorker
                       TxMetaStorageSpecs
                       Util.Buildable
@@ -431,10 +446,11 @@ test-suite wallet-unit-tests
                       Wallet.Incremental
                       Wallet.Inductive
                       Wallet.Inductive.Cardano
+                      Wallet.Inductive.ExtWalletEvent
                       Wallet.Inductive.Generator
+                      Wallet.Inductive.History
                       Wallet.Inductive.Interpreter
                       Wallet.Inductive.Invariants
-                      Wallet.Inductive.History
                       Wallet.Inductive.Validation
                       Wallet.Prefiltered
                       Wallet.Rollback.Basic
@@ -521,7 +537,6 @@ test-suite wallet-new-specs
                     RequestSpec
                     WalletHandlersSpec
                     WalletNewJson
-                    WalletNewGen
                     Cardano.Wallet.WalletLayer.QuickCheck
 
   default-language: Haskell2010

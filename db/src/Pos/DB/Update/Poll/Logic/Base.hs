@@ -1,4 +1,5 @@
-{-# LANGUAGE Rank2Types #-}
+{-# LANGUAGE Rank2Types      #-}
+{-# LANGUAGE RecordWildCards #-}
 
 -- | Base operations in Poll.
 
@@ -38,6 +39,7 @@ import           Data.Time.Units (convertUnit)
 import           Formatting (build, int, sformat, (%))
 import           System.Wlog (WithLogger, logDebug, logNotice)
 
+import           Pos.Chain.Block (HeaderHash, IsMainHeader (..), headerHashG)
 import           Pos.Chain.Update (BlockVersionState (..),
                      ConfirmedProposalState (..), DecidedProposalState (..),
                      DpsExtra (..), MonadPoll (..), MonadPollRead (..),
@@ -51,7 +53,6 @@ import           Pos.Core (Coin, CoinPortion (..), EpochIndex,
                      difficultyL, epochSlots, getCoinPortion, isBootstrapEra,
                      sumCoins, unsafeAddCoin, unsafeIntegerToCoin,
                      unsafeSubCoin)
-import           Pos.Core.Block (HeaderHash, IsMainHeader (..), headerHashG)
 import           Pos.Core.Slotting (EpochSlottingData (..), SlottingData,
                      addEpochSlottingData, getCurrentEpochIndex,
                      getNextEpochSlottingData)

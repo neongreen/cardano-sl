@@ -1,3 +1,5 @@
+{-# LANGUAGE RecordWildCards #-}
+
 -- | Logic of local data processing in Update System.
 
 module Pos.DB.Update.Logic.Local
@@ -33,6 +35,7 @@ import           System.Wlog (WithLogger, logWarning)
 import           UnliftIO (MonadUnliftIO)
 
 import           Pos.Binary.Class (biSize)
+import           Pos.Chain.Block (HeaderHash)
 import           Pos.Chain.Update (HasUpdateConfiguration,
                      MonadPoll (deactivateProposal),
                      MonadPollRead (getProposal), PollModifier,
@@ -40,14 +43,13 @@ import           Pos.Chain.Update (HasUpdateConfiguration,
                      execPollT, getAdoptedBV, modifyPollModifier, psVotes,
                      reportUnexpectedError, runPollT)
 import           Pos.Core (ProtocolMagic, SlotId (..), slotIdF)
-import           Pos.Core.Block (HeaderHash)
 import           Pos.Core.Reporting (MonadReporting)
-import           Pos.Core.StateLock (StateLock)
 import           Pos.Core.Update (BlockVersionData (..), UpId,
                      UpdatePayload (..), UpdateProposal, UpdateVote (..))
 import           Pos.Crypto (PublicKey, shortHashF)
 import           Pos.DB.Class (MonadDBRead)
 import qualified Pos.DB.GState.Common as DB
+import           Pos.DB.GState.Lock (StateLock)
 import           Pos.DB.Lrc (HasLrcContext)
 import           Pos.DB.Update.Context (UpdateContext (..))
 import qualified Pos.DB.Update.GState as DB

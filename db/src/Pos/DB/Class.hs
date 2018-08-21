@@ -58,8 +58,8 @@ import qualified Database.RocksDB as Rocks
 import           Serokell.Data.Memory.Units (Byte)
 
 import           Pos.Binary.Class (Bi, decodeFull')
+import           Pos.Chain.Block (Block, BlockHeader, HeaderHash)
 import           Pos.Core (EpochIndex, HasConfiguration, isBootstrapEra)
-import           Pos.Core.Block (Block, BlockHeader, HeaderHash)
 import           Pos.Core.Update (BlockVersionData (..))
 import           Pos.DB.Error (DBError (DBMalformed))
 import           Pos.Util.Util (eitherToThrow)
@@ -116,6 +116,9 @@ class (HasConfiguration, MonadThrow m) => MonadDBRead m where
     -- | Get undo by header hash
     dbGetSerUndo :: HeaderHash -> m (Maybe SerializedUndo)
 
+    -- | Get blund by header hash
+    dbGetSerBlund :: HeaderHash -> m (Maybe SerializedBlund)
+
 instance {-# OVERLAPPABLE #-}
     (MonadDBRead m, MonadTrans t, MonadThrow (t m)) =>
         MonadDBRead (t m)
@@ -125,6 +128,7 @@ instance {-# OVERLAPPABLE #-}
         transPipe (transResourceT lift) (dbIterSource tag p)
     dbGetSerBlock = lift . dbGetSerBlock
     dbGetSerUndo = lift . dbGetSerUndo
+    dbGetSerBlund = lift . dbGetSerBlund
 
 type MonadBlockDBRead m = (MonadDBRead m)
 

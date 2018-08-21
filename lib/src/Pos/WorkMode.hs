@@ -31,8 +31,9 @@ import           Pos.Core.Reporting (HasMisbehaviorMetrics (..))
 import           Pos.Core.Slotting (HasSlottingVar (..), MonadSlotsData)
 import           Pos.DB (MonadGState (..), NodeDBs)
 import           Pos.DB.Block (MonadBListener (..), dbGetSerBlockRealDefault,
-                     dbGetSerUndoRealDefault, dbPutSerBlundsRealDefault,
-                     onApplyBlocksStub, onRollbackBlocksStub)
+                     dbGetSerBlundRealDefault, dbGetSerUndoRealDefault,
+                     dbPutSerBlundsRealDefault, onApplyBlocksStub,
+                     onRollbackBlocksStub)
 import           Pos.DB.Class (MonadDB (..), MonadDBRead (..))
 import           Pos.DB.DB (gsAdoptedBVDataDefault)
 import           Pos.DB.Rocks (dbDeleteDefault, dbGetDefault,
@@ -53,6 +54,7 @@ import           Pos.Infra.Util.JsonLog.Events (HasJsonLogConfig (..),
 import           Pos.Util.Lens (postfixLFields)
 import           Pos.Util.LoggerName (HasLoggerName' (..), askLoggerNameDefault,
                      modifyLoggerNameDefault)
+import           Pos.Util.UserPublic (HasUserPublic (..))
 import           Pos.Util.UserSecret (HasUserSecret (..))
 import           Pos.Util.Util (HasLens (..))
 import           Pos.WorkMode.Class (MinWorkMode, WorkMode)
@@ -111,6 +113,9 @@ instance HasPrimaryKey (RealModeContext ext) where
 instance HasMisbehaviorMetrics (RealModeContext ext) where
     misbehaviorMetrics = rmcNodeContext_L . misbehaviorMetrics
 
+instance HasUserPublic (RealModeContext ext) where
+    userPublic = rmcNodeContext_L . userPublic
+
 instance HasUserSecret (RealModeContext ext) where
     userSecret = rmcNodeContext_L . userSecret
 
@@ -159,6 +164,7 @@ instance HasConfiguration => MonadDBRead (RealMode ext) where
     dbIterSource = dbIterSourceDefault
     dbGetSerBlock = dbGetSerBlockRealDefault
     dbGetSerUndo = dbGetSerUndoRealDefault
+    dbGetSerBlund = dbGetSerBlundRealDefault
 
 instance HasConfiguration => MonadDB (RealMode ext) where
     dbPut = dbPutDefault

@@ -25,6 +25,9 @@ import qualified Data.Vector as V
 import qualified Pos.Core as Core
 import qualified Pos.Core.Attributes as Core
 import qualified Pos.Core.Txp as Txp
+import qualified Pos.Chain.Block as Core
+import qualified Pos.Chain.Txp as Core
+import qualified Pos.Core as Core
 import qualified Pos.Crypto as Core
 
 import qualified Cardano.Crypto.Wallet as CCW
@@ -270,6 +273,11 @@ instance SC.SafeCopy (InDb (Core.RedeemSignature a)) where
   putCopy (InDb (Core.RedeemSignature pk)) = SC.contain $ do
     SC.safePut (Ed25519.unSignature pk :: B.ByteString)
 
+-- TODO: This is really a UTxO again..
+instance SafeCopy (InDb (NonEmpty (Core.TxIn, Core.TxOutAux))) where
+    getCopy = error "TODO: getCopy for (InDb (NonEmpty (Core.TxIn, Core.TxOutAux)))"
+    putCopy = error "TODO: putCopy for (InDb (NonEmpty (Core.TxIn, Core.TxOutAux)))"
+
 instance forall h. SC.SafeCopy (InDb h)
   => SC.SafeCopy (InDb (Core.Attributes h)) where
   getCopy = SC.contain $ do
@@ -363,6 +371,39 @@ instance forall a.
       let xsi :: [InDb a] = map InDb (Set.toList sa)
       SC.safePut xsi
 
+instance SafeCopy (InDb Core.BlockHeader) where
+    getCopy = error "TODO: getCopy for (InDb Core.BlockHeader)"
+    putCopy = error "TODO: putCopy for (InDb Core.BlockHeader)"
+
+instance SafeCopy (InDb Core.HeaderHash) where
+    getCopy = error "TODO: getCopy for (InDb Core.HeaderHash)"
+    putCopy = error "TODO: putCopy for (InDb Core.HeaderHash)"
+
+instance SafeCopy (InDb Core.Timestamp) where
+    getCopy = error "TODO: getCopy for (InDb Core.Timestamp)"
+    putCopy = error "TODO: putCopy for (InDb Core.Timestamp)"
+
+-- TODO this should live with other core type safecopy instances
+instance SafeCopy Core.TxAux where
+    getCopy = error "TODO: getCopy for (InDb Core.TxAux)"
+    putCopy = error "TODO: putCopy for (InDb Core.TxAux)"
+
+instance SafeCopy (InDb Core.TxAux) where
+    getCopy = error "TODO: getCopy for (InDb Core.TxAux)"
+    putCopy = error "TODO: putCopy for (InDb Core.TxAux)"
+
+instance SafeCopy (InDb (Map Core.TxId Core.TxAux)) where
+    getCopy = error "TODO: getCopy for (InDb (Map Core.TxId Core.TxAux))"
+    putCopy = error "TODO: putCopy for (InDb (Map Core.TxId Core.TxAux))"
+
+instance SafeCopy (InDb Core.TxId) where
+    getCopy = error "TODO: getCopy for (InDb Core.TxId)"
+    putCopy = error "TODO: putCopy for (InDb Core.TxId)"
+
+instance SafeCopy (InDb Core.TxIn) where
+    getCopy = error "TODO: getCopy for (InDb Core.TxIn)"
+    putCopy = error "TODO: putCopy for (InDb Core.TxIn)"
+
 instance forall a b.
     (SC.SafeCopy (InDb a), SC.SafeCopy (InDb b), Ord a)
     => SC.SafeCopy (InDb (Map a b)) where
@@ -374,6 +415,7 @@ instance forall a b.
       let xsi :: [(InDb a, InDb b)] = map (InDb *** InDb) (Map.toList m)
       SC.safePut xsi
 
+
 instance forall algo a.
   (Core.HashAlgorithm algo)
   => SC.SafeCopy (InDb (Core.AbstractHash algo a)) where
@@ -383,3 +425,7 @@ instance forall algo a.
     pure (InDb (Core.AbstractHash d))
   putCopy (InDb (Core.AbstractHash (d :: Digest algo))) = SC.contain $ do
     SC.safePut (BA.convert d :: B.ByteString)
+
+instance SafeCopy (InDb (Map Core.TxId Core.SlotId)) where
+    getCopy = error "TODO: getCopy for (InDb (Map Core.TxId Core.SlotId))"
+    putCopy = error "TODO: putCopy for (InDb (Map Core.TxId Core.SlotId))"

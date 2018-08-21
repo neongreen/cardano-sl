@@ -2,24 +2,29 @@ module Cardano.Wallet.API.V1.Handlers.Wallets where
 
 import           Universum
 
+import           Pos.Core (Coin)
+
 import           Cardano.Wallet.API.Request
 import           Cardano.Wallet.API.Response
 import           Cardano.Wallet.API.V1.Types as V1
 import qualified Cardano.Wallet.API.V1.Wallets as Wallets
 
-import           Cardano.Wallet.WalletLayer (PassiveWalletLayer (..))
+import           Cardano.Wallet.WalletLayer (PassiveWalletLayer)
+import qualified Cardano.Wallet.WalletLayer as WalletLayer
 
 import           Servant
 
 -- | All the @Servant@ handlers for wallet-specific operations.
 handlers :: PassiveWalletLayer IO -> ServerT Wallets.API Handler
 handlers pwl =  newWallet pwl
-           :<|> listWallets
-           :<|> updatePassword
-           :<|> deleteWallet
-           :<|> getWallet
-           :<|> updateWallet
-
+           :<|> listWallets pwl
+           :<|> updatePassword pwl
+           :<|> deleteWallet pwl
+           :<|> getWallet pwl
+           :<|> updateWallet pwl
+           :<|> checkExternalWallet pwl
+           :<|> newExternalWallet pwl
+           :<|> deleteExternalWallet pwl
 
 -- | Creates a new or restores an existing @wallet@ given a 'NewWallet' payload.
 -- Returns to the client the representation of the created or restored
@@ -33,31 +38,78 @@ newWallet pwl newWalletRequest = do
 
     -- FIXME(adn) Wallet restoration from seed will be provided as part of
     -- CBR-243.
-    res <- liftIO $ (_pwlCreateWallet pwl) newWalletRequest
+    res <- liftIO $ WalletLayer.createWallet pwl newWalletRequest
     case res of
          Left e  -> throwM e
          Right w -> return $ single w
 
 -- | Returns the full (paginated) list of wallets.
-listWallets :: RequestParams
-            -> FilterOperations Wallet
+listWallets :: PassiveWalletLayer IO
+            -> RequestParams
+            -> FilterOperations '[WalletId, Coin] Wallet
             -> SortOperations Wallet
             -> Handler (WalletResponse [Wallet])
-listWallets _params _fops _sops = error "Unimplemented. See CBR-227."
+listWallets pwl params fops sops = do
+    wallets <- liftIO $ WalletLayer.getWallets pwl
+    respondWith params
+        fops
+        sops
+        (pure wallets)
 
-updatePassword :: WalletId
+updatePassword :: PassiveWalletLayer IO
+               -> WalletId
                -> PasswordUpdate
                -> Handler (WalletResponse Wallet)
-updatePassword _wid _passwordUpdate = error "Unimplemented. See CBR-227."
+updatePassword pwl wid passwordUpdate = do
+    res <- liftIO $ WalletLayer.updateWalletPassword pwl wid passwordUpdate
+    case res of
+         Left e  -> throwM e
+         Right w -> return $ single w
 
 -- | Deletes an exisiting wallet.
-deleteWallet :: WalletId -> Handler NoContent
-deleteWallet _wid = error "Unimplemented. See CBR-227."
+deleteWallet :: PassiveWalletLayer IO
+             -> WalletId
+             -> Handler NoContent
+deleteWallet pwl wid = do
+    res <- liftIO $ WalletLayer.deleteWallet pwl wid
+    case res of
+         Left e   -> throwM e
+         Right () -> return NoContent
 
-getWallet :: WalletId -> Handler (WalletResponse Wallet)
-getWallet _wid = error "Unimplemented. See CBR-227."
+-- | Gets a specific wallet.
+getWallet :: PassiveWalletLayer IO
+          -> WalletId
+          -> Handler (WalletResponse Wallet)
+getWallet pwl wid = do
+    res <- liftIO $ WalletLayer.getWallet pwl wid
+    case res of
+         Left e  -> throwM e
+         Right w -> return $ single w
 
-updateWallet :: WalletId
+updateWallet :: PassiveWalletLayer IO
+             -> WalletId
              -> WalletUpdate
              -> Handler (WalletResponse Wallet)
-updateWallet _wid _walletUpdate = error "Unimplemented. See CBR-227."
+updateWallet pwl wid walletUpdateRequest = do
+    res <- liftIO $ WalletLayer.updateWallet pwl wid walletUpdateRequest
+    case res of
+         Left e  -> throwM e
+         Right w -> return $ single w
+
+checkExternalWallet :: PassiveWalletLayer IO
+                    -> PublicKeyAsBase58
+                    -> Handler (WalletResponse WalletAndTxHistory)
+checkExternalWallet _encodedRootPK =
+    error "[CHW-54], Cardano Hardware Wallet feature, , check external wallet, unimplemented yet."
+
+newExternalWallet :: PassiveWalletLayer IO
+                  -> NewExternalWallet
+                  -> Handler (WalletResponse Wallet)
+newExternalWallet _newExtWallet =
+    error "[CHW-80], Cardano Hardware Wallet feature, new external wallet, unimplemented yet."
+
+deleteExternalWallet :: PassiveWalletLayer IO
+                     -> PublicKeyAsBase58
+                     -> Handler NoContent
+deleteExternalWallet _encodedRootPK =
+    error "[CHW-106], Cardano Hardware Wallet feature, , delete external wallet, unimplemented yet."

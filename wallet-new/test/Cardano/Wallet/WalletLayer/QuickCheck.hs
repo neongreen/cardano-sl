@@ -10,13 +10,15 @@ import           Universum
 
 import           Cardano.Wallet.Kernel.Diffusion (WalletDiffusion (..))
 import           Cardano.Wallet.Orphans.Arbitrary ()
-import           Cardano.Wallet.WalletLayer.Types (ActiveWalletLayer (..),
+import           Cardano.Wallet.WalletLayer (ActiveWalletLayer (..),
                      CreateAccountError (..), DeleteAccountError (..),
-                     GetAccountError (..), GetAccountsError (..),
-                     PassiveWalletLayer (..), UpdateAccountError (..))
+                     DeleteWalletError (..), GetAccountError (..),
+                     GetAccountsError (..), GetWalletError (..),
+                     PassiveWalletLayer (..), UpdateAccountError (..),
+                     UpdateWalletError (..), UpdateWalletPasswordError (..),
+                     ValidateAddressError (..))
 
 import           Cardano.Wallet.API.V1.Types (V1 (..))
-import qualified Cardano.Wallet.Kernel.Accounts as Kernel
 
 import           Pos.Core ()
 import           Test.QuickCheck (Arbitrary, arbitrary, generate, oneof)
@@ -33,24 +35,33 @@ bracketPassiveWallet =
   where
     passiveWalletLayer :: PassiveWalletLayer n
     passiveWalletLayer = PassiveWalletLayer
-        { _pwlCreateWallet   = \_     -> liftedGen
-        , _pwlGetWalletIds   =           liftedGen
-        , _pwlGetWallet      = \_     -> liftedGen
-        , _pwlUpdateWallet   = \_ _   -> liftedGen
-        , _pwlDeleteWallet   = \_     -> liftedGen
+        { createWallet         = \_     -> liftedGen
+        , getWallets           =           liftedGen
+        , getWallet            = \_     -> liftedGen
+        , updateWallet         = \_ _   -> liftedGen
+        , updateWalletPassword = \_ _   -> liftedGen
+        , deleteWallet         = \_     -> liftedGen
 
-        , _pwlCreateAccount  = \_ _   -> liftedGen
-        , _pwlGetAccounts    = \_     -> liftedGen
-        , _pwlGetAccount     = \_ _   -> liftedGen
-        , _pwlUpdateAccount  = \_ _ _ -> liftedGen
-        , _pwlDeleteAccount  = \_ _   -> liftedGen
+        , createAccount        = \_ _   -> liftedGen
+        , getAccounts          = \_     -> liftedGen
+        , getAccount           = \_ _   -> liftedGen
+        , getAccountBalance    = \_ _   -> liftedGen
+        , getAccountAddresses  = \_ _ _ _ -> liftedGen
+        , updateAccount        = \_ _ _ -> liftedGen
+        , deleteAccount        = \_ _   -> liftedGen
 
-        , _pwlCreateAddress  = \_     -> liftedGen
-        , _pwlGetAddresses   = \_     -> liftedGen
+        , createAddress        = \_     -> liftedGen
+        , getAddresses         = \_     -> liftedGen
+        , validateAddress      = \_     -> liftedGen
 
-        , _pwlApplyBlocks    = \_     -> liftedGen
-        , _pwlRollbackBlocks = \_     -> liftedGen
-       }
+        , getTransactions      = \_ _ _ _ _ _ -> liftedGen
+        , getTxFromMeta        = \_ -> liftedGen
+
+        , applyBlocks          = \_     -> liftedGen
+        , rollbackBlocks       = \_     -> liftedGen
+
+        , getNodeSettings      = liftedGen
+        }
 
 -- | A utility function.
 liftedGen :: forall b n. (MonadIO n, Arbitrary b) => n b
@@ -73,22 +84,22 @@ bracketActiveWallet walletPassiveLayer _walletDiffusion =
           walletPassiveLayer = walletPassiveLayer
         , pay          = \_ _ _ -> error "unimplemented"
         , estimateFees = \_ _ _ -> error "unimplemented"
+        , redeemAda    = \_ -> error "unimplemented"
+        , getNodeInfo  = error "unimplemented"
         }
 
 
 {-----------------------------------------------------------------------------
-Orphan instances, in preparation for rehoming them.
+ Orphan instances, in preparation for rehoming them.
+ Note that most of them are bonkers -- they were put here just for the sake
+ of the code to compile, as we are not actually using this particular layer
+ anywhere.
 ------------------------------------------------------------------------------}
 
 instance Arbitrary CreateAccountError where
     arbitrary = oneof [ CreateAccountError <$> arbitrary
                       , pure (CreateAccountWalletIdDecodingFailed "foobar")
-                      , CreateAccountTimeLimitReached <$> arbitrary
-                      ]
-
-instance Arbitrary Kernel.CreateAccountError where
-    arbitrary = oneof [ Kernel.CreateAccountUnknownHdRoot <$> arbitrary
-                      , Kernel.CreateAccountHdRndAccountSpaceSaturated <$> arbitrary
+                      , CreateAccountFirstAddressGenerationFailed <$> arbitrary
                       ]
 
 instance Arbitrary GetAccountError where
@@ -109,4 +120,24 @@ instance Arbitrary UpdateAccountError where
 instance Arbitrary DeleteAccountError where
     arbitrary = oneof [ DeleteAccountError . V1 <$> arbitrary
                       , DeleteAccountWalletIdDecodingFailed <$> arbitrary
+                      ]
+
+instance Arbitrary GetWalletError where
+    arbitrary = oneof [ GetWalletWalletIdDecodingFailed <$> arbitrary
+                      , GetWalletError . V1 <$> arbitrary
+                      ]
+
+instance Arbitrary UpdateWalletPasswordError where
+    arbitrary = oneof [ UpdateWalletPasswordError <$> arbitrary
+                      , UpdateWalletPasswordWalletIdDecodingFailed <$> arbitrary
+                      ]
+
+instance Arbitrary DeleteWalletError where
+    arbitrary = oneof [ DeleteWalletWalletIdDecodingFailed <$> arbitrary ]
+
+instance Arbitrary UpdateWalletError where
+    arbitrary = oneof [ UpdateWalletWalletIdDecodingFailed <$> arbitrary ]
+
+instance Arbitrary ValidateAddressError where
+    arbitrary = oneof [ ValidateAddressDecodingFailed <$> arbitrary
                       ]

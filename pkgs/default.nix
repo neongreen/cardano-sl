@@ -15346,6 +15346,8 @@ license = stdenv.lib.licenses.mit;
 , cardano-sl-crypto-test
 , cardano-sl-util
 , cardano-sl-util-test
+, cborg
+, cereal
 , conduit
 , containers
 , cpphs
@@ -15377,6 +15379,7 @@ license = stdenv.lib.licenses.mit;
 , random
 , reflection
 , safe-exceptions
+, safecopy
 , serokell-util
 , stdenv
 , template-haskell
@@ -15409,6 +15412,8 @@ cardano-sl-binary
 cardano-sl-core
 cardano-sl-crypto
 cardano-sl-util
+cborg
+cereal
 conduit
 containers
 cryptonite
@@ -15433,6 +15438,7 @@ parsec
 plutus-prototype
 reflection
 safe-exceptions
+safecopy
 serokell-util
 template-haskell
 text
@@ -15503,12 +15509,14 @@ license = stdenv.lib.licenses.mit;
 , bytestring
 , cardano-crypto
 , cardano-sl-binary
+, cardano-sl-binary-test
 , cardano-sl-chain
 , cardano-sl-core
 , cardano-sl-core-test
 , cardano-sl-crypto
 , cardano-sl-crypto-test
 , cardano-sl-util-test
+, containers
 , formatting
 , generic-arbitrary
 , hedgehog
@@ -15534,12 +15542,14 @@ base
 bytestring
 cardano-crypto
 cardano-sl-binary
+cardano-sl-binary-test
 cardano-sl-chain
 cardano-sl-core
 cardano-sl-core-test
 cardano-sl-crypto
 cardano-sl-crypto-test
 cardano-sl-util-test
+containers
 formatting
 generic-arbitrary
 hedgehog
@@ -16081,12 +16091,16 @@ license = stdenv.lib.licenses.mit;
   mkDerivation
 , aeson
 , base
+, binary
 , bytestring
 , cardano-sl-binary
+, cardano-sl-binary-test
 , cardano-sl-chain
 , cardano-sl-core
+, cardano-sl-core-test
 , cardano-sl-crypto
 , cardano-sl-util
+, cardano-sl-util-test
 , concurrent-extra
 , conduit
 , containers
@@ -16096,8 +16110,10 @@ license = stdenv.lib.licenses.mit;
 , directory
 , ekg-core
 , ether
+, exceptions
 , filepath
 , formatting
+, hedgehog
 , lens
 , log-warper
 , lrucache
@@ -16112,6 +16128,7 @@ license = stdenv.lib.licenses.mit;
 , stdenv
 , stm
 , tagged
+, temporary
 , text
 , time-units
 , transformers
@@ -16132,6 +16149,7 @@ configureFlags = [
 libraryHaskellDepends = [
 aeson
 base
+binary
 bytestring
 cardano-sl-binary
 cardano-sl-chain
@@ -16146,6 +16164,7 @@ data-default
 directory
 ekg-core
 ether
+exceptions
 filepath
 formatting
 lens
@@ -16170,6 +16189,17 @@ unordered-containers
 ];
 libraryToolDepends = [
 cpphs
+];
+testHaskellDepends = [
+base
+cardano-sl-binary-test
+cardano-sl-core
+cardano-sl-core-test
+cardano-sl-util-test
+filepath
+hedgehog
+temporary
+universum
 ];
 doHaddock = false;
 description = "Cardano SL - basic DB interfaces";
@@ -16773,6 +16803,7 @@ libraryToolDepends = [
 cpphs
 ];
 testHaskellDepends = [
+aeson
 async
 base
 bytestring
@@ -16784,14 +16815,18 @@ cardano-sl-core
 cardano-sl-core-test
 cardano-sl-crypto
 cardano-sl-crypto-test
+cardano-sl-networking
 cardano-sl-util-test
 containers
+dns
 generic-arbitrary
 hedgehog
 hspec
+iproute
 kademlia
 QuickCheck
 universum
+unordered-containers
 ];
 doHaddock = false;
 description = "Cardano SL - infrastructural";
@@ -16801,6 +16836,7 @@ license = stdenv.lib.licenses.mit;
 "cardano-sl-infra-test" = callPackage
 ({
   mkDerivation
+, aeson
 , async
 , base
 , bytestring
@@ -16813,15 +16849,19 @@ license = stdenv.lib.licenses.mit;
 , cardano-sl-crypto
 , cardano-sl-crypto-test
 , cardano-sl-infra
+, cardano-sl-networking
 , cardano-sl-util-test
 , containers
+, dns
 , generic-arbitrary
 , hedgehog
 , hspec
+, iproute
 , kademlia
 , QuickCheck
 , stdenv
 , universum
+, unordered-containers
 }:
 mkDerivation {
 
@@ -16829,6 +16869,7 @@ pname = "cardano-sl-infra-test";
 version = "1.3.0";
 src = ./../infra/test;
 libraryHaskellDepends = [
+aeson
 async
 base
 bytestring
@@ -16841,14 +16882,18 @@ cardano-sl-core-test
 cardano-sl-crypto
 cardano-sl-crypto-test
 cardano-sl-infra
+cardano-sl-networking
 cardano-sl-util-test
 containers
+dns
 generic-arbitrary
 hedgehog
 hspec
+iproute
 kademlia
 QuickCheck
 universum
+unordered-containers
 ];
 doHaddock = false;
 description = "Cardano SL - generators for cardano-sl-infra";
@@ -16891,6 +16936,7 @@ license = stdenv.lib.licenses.mit;
 , random
 , resourcet
 , safe-exceptions
+, scientific
 , serokell-util
 , statistics
 , stdenv
@@ -16900,6 +16946,7 @@ license = stdenv.lib.licenses.mit;
 , time
 , time-units
 , universum
+, unordered-containers
 , vector
 }:
 mkDerivation {
@@ -16942,12 +16989,14 @@ network-transport-tcp
 random
 resourcet
 safe-exceptions
+scientific
 stm
 text
 these
 time
 time-units
 universum
+unordered-containers
 ];
 executableHaskellDepends = [
 async
@@ -17128,11 +17177,13 @@ license = stdenv.lib.licenses.mit;
 , hedgehog
 , hourglass
 , hspec
+, ip
 , lens
 , lifted-async
 , log-warper
 , mtl
 , neat-interpolation
+, network-transport
 , network-transport-tcp
 , optparse-applicative
 , optparse-generic
@@ -17243,11 +17294,13 @@ filepath
 formatting
 Glob
 hourglass
+ip
 lens
 lifted-async
 log-warper
 mtl
 neat-interpolation
+network-transport
 network-transport-tcp
 optparse-applicative
 optparse-generic
@@ -17711,6 +17764,7 @@ license = stdenv.lib.licenses.mit;
 , aeson-pretty
 , async
 , base
+, base58-bytestring
 , beam-core
 , beam-migrate
 , beam-sqlite
@@ -17753,7 +17807,6 @@ license = stdenv.lib.licenses.mit;
 , http-client-tls
 , http-types
 , ixset-typed
-, json-sop
 , lens
 , log-warper
 , memory
@@ -17825,6 +17878,7 @@ aeson-options
 aeson-pretty
 async
 base
+base58-bytestring
 beam-core
 beam-migrate
 beam-sqlite
@@ -17859,7 +17913,6 @@ http-client
 http-client-tls
 http-types
 ixset-typed
-json-sop
 lens
 log-warper
 memory
@@ -46045,6 +46098,48 @@ doHaddock = false;
 doCheck = false;
 homepage = "http://snapframework.com/";
 description = "HAProxy protocol 1.5 support for io-streams";
+license = stdenv.lib.licenses.bsd3;
+
+}) {};
+"ip" = callPackage
+({
+  mkDerivation
+, aeson
+, attoparsec
+, base
+, bytestring
+, fetchgit
+, hashable
+, primitive
+, stdenv
+, text
+, vector
+}:
+mkDerivation {
+
+pname = "ip";
+version = "1.3.0";
+src = fetchgit {
+
+url = "https://github.com/andrewthad/haskell-ip";
+sha256 = "199mfpbgca7rvwvwk2zsmcpibc0sk0ni7c5zlf4gk3cps8s85gyr";
+rev = "9bb453139aa82cc973125091800422a523e1eb8f";
+
+};
+libraryHaskellDepends = [
+aeson
+attoparsec
+base
+bytestring
+hashable
+primitive
+text
+vector
+];
+doHaddock = false;
+doCheck = false;
+homepage = "https://github.com/andrewthad/haskell-ip#readme";
+description = "Library for IP and MAC addresses";
 license = stdenv.lib.licenses.bsd3;
 
 }) {};

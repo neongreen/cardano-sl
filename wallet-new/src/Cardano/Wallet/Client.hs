@@ -16,7 +16,7 @@ module Cardano.Wallet.Client
     , liftClient
     -- * The type of errors that the client might return
     , ClientError(..)
-    , V1Errors.WalletError(..)
+    , WalletError(..)
     , ServantError(..)
     , Response
     , GenResponse(..)
@@ -36,14 +36,15 @@ import           Universum
 import           Control.Exception (Exception (..))
 import           Servant.Client (GenResponse (..), Response, ServantError (..))
 
+import qualified Pos.Core as Core
+import qualified Pos.Core.Txp as Core
+
 import           Cardano.Wallet.API.Request.Filter
 import           Cardano.Wallet.API.Request.Pagination
 import           Cardano.Wallet.API.Request.Sort
 import           Cardano.Wallet.API.Response
-import qualified Cardano.Wallet.API.V1.Errors as V1Errors
 import           Cardano.Wallet.API.V1.Parameters
 import           Cardano.Wallet.API.V1.Types
-import qualified Pos.Core as Core
 
 -- | A representation of a wallet client parameterized over some effect
 -- type @m@.
@@ -77,7 +78,7 @@ data WalletClient m
     , getWalletIndexFilterSorts
          :: Maybe Page
          -> Maybe PerPage
-         -> FilterOperations Wallet
+         -> FilterOperations '[WalletId, Core.Coin] Wallet
          -> SortOperations Wallet
          -> Resp m [Wallet]
     , updateWalletPassword
@@ -88,6 +89,12 @@ data WalletClient m
         :: WalletId -> Resp m Wallet
     , updateWallet
          :: WalletId -> Update Wallet -> Resp m Wallet
+    , postCheckExternalWallet
+         :: PublicKeyAsBase58 -> Resp m WalletAndTxHistory
+    , postExternalWallet
+         :: New ExternalWallet -> Resp m Wallet
+    , deleteExternalWallet
+         :: PublicKeyAsBase58 -> m (Either ClientError ())
     -- account endpoints
     , deleteAccount
          :: WalletId -> AccountIndex -> m (Either ClientError ())
@@ -99,8 +106,15 @@ data WalletClient m
         :: WalletId -> New Account -> Resp m Account
     , updateAccount
          :: WalletId -> AccountIndex -> Update Account -> Resp m Account
-    , redeemAda
-        :: WalletId -> AccountIndex -> Redemption -> Resp m Transaction
+    , getAccountAddresses
+         :: WalletId
+         -> AccountIndex
+         -> Maybe Page
+         -> Maybe PerPage
+         -> FilterOperations '[V1 Address] WalletAddress
+         -> Resp m AccountAddresses
+    , getAccountBalance
+         :: WalletId -> AccountIndex -> Resp m AccountBalance
     -- transactions endpoints
     , postTransaction
          :: Payment -> Resp m Transaction
@@ -110,11 +124,13 @@ data WalletClient m
          -> Maybe (V1 Core.Address)
          -> Maybe Page
          -> Maybe PerPage
-         -> FilterOperations Transaction
+         -> FilterOperations '[V1 Core.TxId, V1 Core.Timestamp] Transaction
          -> SortOperations Transaction
          -> Resp m [Transaction]
     , getTransactionFee
          :: Payment -> Resp m EstimatedFees
+    , redeemAda
+         :: Redemption -> Resp m Transaction
     -- settings
     , getNodeSettings
          :: Resp m NodeSettings
@@ -139,7 +155,7 @@ paginateAll request = fmap fixMetadata <$> paginatePage 1
   where
     fixMetadata WalletResponse{..} =
         WalletResponse
-            { wrMeta = Metadata $
+            { wrMeta = Metadata
                 PaginationMetadata
                     { metaTotalPages = 1
                     , metaPage = Page 1
@@ -202,6 +218,12 @@ hoistClient phi wc = WalletClient
         phi . getWallet wc
     , updateWallet =
         \x -> phi . updateWallet wc x
+    , postCheckExternalWallet =
+        phi . postCheckExternalWallet wc
+    , postExternalWallet =
+        phi . postExternalWallet wc
+    , deleteExternalWallet =
+        phi . deleteExternalWallet wc
     , deleteAccount =
         \x -> phi . deleteAccount wc x
     , getAccount =
@@ -213,7 +235,11 @@ hoistClient phi wc = WalletClient
     , updateAccount =
         \x y -> phi . updateAccount wc x y
     , redeemAda =
-        \x y -> phi . redeemAda wc x y
+        phi . redeemAda wc
+    , getAccountAddresses =
+        \x y p pp f -> phi $ getAccountAddresses wc x y p pp f
+    , getAccountBalance =
+        \x -> phi . getAccountBalance wc x
     , postTransaction =
         phi . postTransaction wc
     , getTransactionIndexFilterSorts =
@@ -237,12 +263,13 @@ liftClient = hoistClient liftIO
 getWalletIndex :: Monad m => WalletClient m -> Resp m [Wallet]
 getWalletIndex = paginateAll . getWalletIndexPaged
 
+
 -- | A type alias shorthand for the response from the 'WalletClient'.
 type Resp m a = m (Either ClientError (WalletResponse a))
 
 -- | The type of errors that the wallet might return.
 data ClientError
-    = ClientWalletError V1Errors.WalletError
+    = ClientWalletError WalletError
     -- ^ The 'WalletError' type represents known failures that the API
     -- might return.
     | ClientHttpError ServantError
@@ -265,4 +292,3 @@ instance Exception ClientError where
     toException (ClientWalletError  e) = toException e
     toException (ClientHttpError    e) = toException e
     toException (UnknownClientError e) = toException e
-

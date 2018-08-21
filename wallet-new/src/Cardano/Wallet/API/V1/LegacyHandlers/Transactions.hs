@@ -2,11 +2,11 @@ module Cardano.Wallet.API.V1.LegacyHandlers.Transactions where
 
 import           Universum
 
-import qualified Data.IxSet.Typed as IxSet
 import qualified Data.List.NonEmpty as NE
+import           Formatting (build, sformat)
 import           Servant
 
-import           Pos.Chain.Txp (TxpConfiguration)
+import           Pos.Chain.Txp (TxId, TxpConfiguration)
 import           Pos.Client.Txp.Util (defaultInputSelectionPolicy)
 import qualified Pos.Client.Txp.Util as V0
 import qualified Pos.Core as Core
@@ -17,6 +17,7 @@ import qualified Pos.Wallet.WalletMode as V0
 import qualified Pos.Wallet.Web.ClientTypes.Types as V0
 import qualified Pos.Wallet.Web.Methods.History as V0
 import qualified Pos.Wallet.Web.Methods.Payment as V0
+import qualified Pos.Wallet.Web.Methods.Redeem as V0
 import qualified Pos.Wallet.Web.Methods.Txp as V0
 import qualified Pos.Wallet.Web.State as V0
 import           Pos.Wallet.Web.State.Storage (WalletInfo (_wiSyncStatistics))
@@ -24,11 +25,38 @@ import qualified Pos.Wallet.Web.Util as V0
 
 import           Cardano.Wallet.API.Request
 import           Cardano.Wallet.API.Response
-import           Cardano.Wallet.API.V1.Errors
 import           Cardano.Wallet.API.V1.Migration (HasConfigurations, MonadV1,
                      migrate)
 import qualified Cardano.Wallet.API.V1.Transactions as Transactions
 import           Cardano.Wallet.API.V1.Types
+import qualified Cardano.Wallet.Kernel.DB.Util.IxSet as IxSet
+
+
+convertTxError :: V0.TxError -> WalletError
+convertTxError err = case err of
+    V0.NotEnoughMoney coin ->
+        NotEnoughMoney . fromIntegral . Core.getCoin $ coin
+    V0.NotEnoughAllowedMoney coin ->
+        NotEnoughMoney . fromIntegral . Core.getCoin $ coin
+    V0.FailedToStabilize ->
+        TxFailedToStabilize
+    V0.OutputIsRedeem addr ->
+        OutputIsRedeem (V1 addr)
+    V0.RedemptionDepleted ->
+        TxRedemptionDepleted
+    V0.SafeSignerNotFound addr ->
+        TxSafeSignerNotFound (V1 addr)
+    V0.SignedTxNotBase16Format ->
+        SignedTxSubmitError $ sformat build V0.SignedTxNotBase16Format
+    V0.SignedTxUnableToDecode txt ->
+        SignedTxSubmitError $ sformat build (V0.SignedTxUnableToDecode txt)
+    V0.SignedTxSignatureNotBase16Format ->
+        SignedTxSubmitError $ sformat build V0.SignedTxSignatureNotBase16Format
+    V0.SignedTxInvalidSignature txt ->
+        SignedTxSubmitError $ sformat build (V0.SignedTxInvalidSignature txt)
+    V0.GeneralTxError txt ->
+        UnknownError txt
+
 
 handlers
     :: HasConfigurations
@@ -40,6 +68,7 @@ handlers pm txpConfig submitTx =
              newTransaction pm txpConfig submitTx
         :<|> allTransactions
         :<|> estimateFees pm
+        :<|> redeemAda pm txpConfig submitTx
 
 newTransaction
     :: forall ctx m
@@ -82,7 +111,7 @@ allTransactions
     -> Maybe AccountIndex
     -> Maybe (V1 Core.Address)
     -> RequestParams
-    -> FilterOperations Transaction
+    -> FilterOperations '[V1 TxId, V1 Core.Timestamp] Transaction
     -> SortOperations Transaction
     -> m (WalletResponse [Transaction])
 allTransactions mwalletId mAccIdx mAddr requestParams fops sops  =
@@ -94,9 +123,9 @@ allTransactions mwalletId mAccIdx mAddr requestParams fops sops  =
             -- Create a `[V0.AccountId]` to get txs from it
             let accIds = case mAccIdx of
                     Just accIdx -> migrate (walletId, accIdx)
-                    -- ^ Migrate `V1.AccountId` into `V0.AccountId` and put it into a list
+                    -- Migrate `V1.AccountId` into `V0.AccountId` and put it into a list
                     Nothing     -> V0.getWalletAccountIds ws cIdWallet
-                    -- ^ Or get all `V0.AccountId`s of a wallet
+                    -- Or get all `V0.AccountId`s of a wallet
 
             let v0Addr = case mAddr of
                     Nothing        -> Nothing
@@ -133,3 +162,33 @@ estimateFees pm Payment{..} = do
             single <$> migrate fee
         Left err ->
             throwM (convertTxError err)
+
+redeemAda
+    :: HasConfigurations
+    => ProtocolMagic
+    -> TxpConfiguration
+    -> (TxAux -> MonadV1 Bool)
+    -> Redemption
+    -> MonadV1 (WalletResponse Transaction)
+redeemAda pm txpConfig submitTx r = do
+    let ShieldedRedemptionCode seed = redemptionRedemptionCode r
+        V1 spendingPassword = redemptionSpendingPassword r
+        walletId = redemptionWalletId r
+        accountIndex = redemptionAccountIndex r
+    accountId <- migrate (walletId, accountIndex)
+    let caccountId = V0.encodeCType accountId
+    fmap single . migrate =<< case redemptionMnemonic r of
+        Just (RedemptionMnemonic mnemonic) -> do
+            let phrase = V0.CBackupPhrase mnemonic
+            let cpaperRedeem = V0.CPaperVendWalletRedeem
+                    { V0.pvWalletId = caccountId
+                    , V0.pvSeed = seed
+                    , V0.pvBackupPhrase = phrase
+                    }
+            V0.redeemAdaPaperVend pm txpConfig submitTx spendingPassword cpaperRedeem
+        Nothing -> do
+            let cwalletRedeem = V0.CWalletRedeem
+                    { V0.crWalletId = caccountId
+                    , V0.crSeed = seed
+                    }
+            V0.redeemAda pm txpConfig submitTx spendingPassword cwalletRedeem

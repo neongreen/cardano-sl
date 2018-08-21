@@ -1,3 +1,5 @@
+{-# LANGUAGE AllowAmbiguousTypes #-}
+
 module Test.Spec.Kernel (
     spec
   ) where
@@ -5,27 +7,37 @@ module Test.Spec.Kernel (
 import           Universum
 
 import qualified Data.Set as Set
+import           Test.Hspec (SpecWith)
 
 import qualified Cardano.Wallet.Kernel as Kernel
+import           Cardano.Wallet.Kernel.DB.BlockMeta (BlockMeta)
 import qualified Cardano.Wallet.Kernel.Diffusion as Kernel
 import qualified Cardano.Wallet.Kernel.Keystore as Keystore
-import           Cardano.Wallet.Kernel.MonadDBReadAdaptor (rocksDBNotAvailable)
+import           Cardano.Wallet.Kernel.NodeStateAdaptor (mockNodeStateDef)
+import qualified Cardano.Wallet.Kernel.Read as Kernel
+
 import           Pos.Core (Coeff (..), TxSizeLinear (..))
 import           Pos.Core.Chrono
 
 import           Test.Infrastructure.Generator
 import           Test.Infrastructure.Genesis
 import           Test.Pos.Configuration (withDefConfiguration)
+import           Test.Spec.BlockMetaScenarios
+import           Test.Spec.TxMetaScenarios
 import           Util.Buildable.Hspec
 import           Util.Buildable.QuickCheck
+import           Util.Validated
 import           UTxO.Bootstrap
 import           UTxO.Context
 import           UTxO.Crypto
 import           UTxO.DSL
+import           UTxO.Interpreter (BlockMeta' (..), IntCtxt, IntException,
+                     Interpret, int, runIntT')
 import           UTxO.Translate
 import           Wallet.Abstract
 import           Wallet.Inductive
 import           Wallet.Inductive.Cardano
+import           Wallet.Inductive.ExtWalletEvent (UseWalletWorker (..))
 import           Wallet.Inductive.Validation
 
 import qualified Wallet.Rollback.Full as Full
@@ -34,27 +46,53 @@ import qualified Wallet.Rollback.Full as Full
   Compare the wallet kernel with the pure model
 -------------------------------------------------------------------------------}
 
+withWithoutWW :: (UseWalletWorker -> SpecWith a) -> SpecWith a
+withWithoutWW specWith = do
+    describe "without walletworker" $ specWith DontUseWalletWorker
+    describe "with walletworker"    $ specWith UseWalletWorker
+
 spec :: Spec
-spec =
+spec = do
+    describe "test TxMeta insertion" $ do
+      withWithoutWW $ \useWW -> do
+        it "TxMetaScenarioA" $ bracketActiveWallet $ checkTxMeta' useWW (txMetaScenarioA genesis)
+        it "TxMetaScenarioB" $ bracketActiveWallet $ checkTxMeta' useWW (txMetaScenarioB genesis)
+        it "TxMetaScenarioC" $ bracketActiveWallet $ checkTxMeta' useWW (txMetaScenarioC genesis)
+        it "TxMetaScenarioD" $ bracketActiveWallet $ checkTxMeta' useWW (txMetaScenarioD genesis)
+
     describe "Compare wallet kernel to pure model" $ do
+      describe "Using hand-written inductive wallets, computes the expected block metadata for" $ do
+        withWithoutWW $ \useWW -> do
+          it "...blockMetaScenarioA" $ bracketActiveWallet $ checkBlockMeta' useWW (blockMetaScenarioA genesis)
+          it "...blockMetaScenarioB" $ bracketActiveWallet $ checkBlockMeta' useWW (blockMetaScenarioB genesis)
+          it "...blockMetaScenarioC" $ bracketActiveWallet $ checkBlockMeta' useWW (blockMetaScenarioC genesis)
+          it "...blockMetaScenarioD" $ bracketActiveWallet $ checkBlockMeta' useWW (blockMetaScenarioD genesis)
+          it "...blockMetaScenarioE" $ bracketActiveWallet $ checkBlockMeta' useWW (blockMetaScenarioE genesis)
+          it "...blockMetaScenarioF" $ bracketActiveWallet $ checkBlockMeta' useWW (blockMetaScenarioF genesis)
+          it "...blockMetaScenarioG" $ bracketActiveWallet $ checkBlockMeta' useWW (blockMetaScenarioG genesis)
+          it "...blockMetaScenarioH" $ bracketActiveWallet $ checkBlockMeta' useWW (blockMetaScenarioH genesis)
+
       describe "Using hand-written inductive wallets" $ do
-        it "computes identical results in presence of dependent pending transactions" $
-          bracketActiveWallet $ \activeWallet -> do
-            checkEquivalent activeWallet (dependentPending genesis)
-      it "computes identical results using generated inductive wallets" $
-        forAll (genInductiveUsingModel model) $ \ind -> do
-          conjoin [
-              shouldBeValidated $ void (inductiveIsValid ind)
-            , bracketActiveWallet $ \activeWallet -> do
-                checkEquivalent activeWallet ind
-            ]
+        withWithoutWW $ \useWW ->
+          it "computes identical results in presence of dependent pending transactions" $
+            bracketActiveWallet $ \activeWallet -> do
+              checkEquivalent useWW activeWallet (dependentPending genesis)
+
+      withWithoutWW $ \useWW ->
+        it "computes identical results using generated inductive wallets" $
+          forAll (genInductiveUsingModel model) $ \ind -> do
+            conjoin [
+                shouldBeValidated $ void (inductiveIsValid ind)
+              , bracketActiveWallet $ \activeWallet -> do
+                  checkEquivalent useWW activeWallet ind
+              ]
+
   where
     transCtxt = runTranslateNoErrors ask
     boot      = bootstrapTransaction transCtxt
-    model     = (cardanoModel linearFeePolicy boot) {
-                     gmMaxNumOurs    = 1
-                   , gmPotentialOurs = isPoorAddr
-                   }
+
+    ourActorIx   = 0
+    model        = (cardanoModel linearFeePolicy ourActorIx (transCtxtAddrs transCtxt) boot)
 
     -- TODO: These constants should not be hardcoded here.
     linearFeePolicy :: TxSizeLinear
@@ -64,19 +102,89 @@ spec =
     genesis = genesisValues linearFeePolicy boot
 
     checkEquivalent :: forall h. Hash h Addr
-                    => Kernel.ActiveWallet
+                    => UseWalletWorker
+                    -> Kernel.ActiveWallet
                     -> Inductive h Addr
                     -> Expectation
-    checkEquivalent activeWallet ind = do
-       shouldReturnValidated $ runTranslateTNoErrors $ do
-         equivalentT activeWallet (encKpEnc ekp) (mkWallet (== addr)) ind
+    checkEquivalent useWW w ind = shouldReturnValidated $ evaluate useWW w ind
+
+    -- | Evaluate the inductive wallet step by step and compare the DSL and Cardano results
+    --   at the end of each step.
+    -- NOTE: This evaluation changes the state of the wallet and also produces an
+    -- interpretation context, which we return to enable further custom interpretation
+    evaluate :: forall h. Hash h Addr
+             => UseWalletWorker
+             -> Kernel.ActiveWallet
+             -> Inductive h Addr
+             -> IO (Validated EquivalenceViolation (IntCtxt h))
+    evaluate useWW activeWallet ind = do
+       fmap (fmap snd) $ runTranslateTNoErrors $ do
+         equivalentT useWW activeWallet esk (mkWallet ours') ind
       where
-        [addr]       = Set.toList $ inductiveOurs ind
-        AddrInfo{..} = resolveAddr addr transCtxt
-        Just ekp     = addrInfoMasterKey
+        esk = deriveRootEsk (IxPoor ourActorIx)
+        -- all addresses belonging to this poor actor
+        ours' a = a `Set.member` (inductiveOurs ind)
+
+        -- | Derive ESK from the poor actor by resolving the actor's first HD address
+        deriveRootEsk actorIx = encKpEnc ekp
+            where
+              addrIx       = 0 -- we can assume that the first HD address of the Poor actor exists
+              AddrInfo{..} = resolveAddr (Addr actorIx addrIx) transCtxt
+              Just ekp     = addrInfoMasterKey
+
+    evaluate' :: forall h. Hash h Addr
+             => UseWalletWorker
+             -> Kernel.ActiveWallet
+             -> Inductive h Addr
+             -> IO (IntCtxt h)
+    evaluate' useWW activeWallet ind = do
+        res <- evaluate useWW activeWallet ind
+        case res of
+            Invalid _ e    -> throwM e
+            Valid intCtxt' -> return intCtxt'
 
     mkWallet :: Hash h Addr => Ours Addr -> Transaction h Addr -> Wallet h Addr
     mkWallet = walletBoot Full.walletEmpty
+
+    -- | Translates the DSL BlockMeta' value to BlockMeta
+    intBlockMeta :: forall h. (Interpret h (BlockMeta' h))
+                 => IntCtxt h
+                 -> (BlockMeta' h)
+                 -> TranslateT IntException IO BlockMeta
+    intBlockMeta intCtxt a = do
+        ma' <- catchTranslateErrors $ runIntT' intCtxt $ int a
+        case ma' of
+          Left err         -> liftIO $ throwM err
+          Right (a', _ic') -> return a'
+
+    checkBlockMeta' :: Hash h Addr
+                    => UseWalletWorker
+                    -> (Inductive h Addr, BlockMeta' h)
+                    -> Kernel.ActiveWallet
+                    -> IO ()
+    checkBlockMeta' useWW (ind, blockMeta') activeWallet
+        = do
+            -- the evaluation changes the wallet state; we also capture the interpretation context
+            intCtxt <- evaluate' useWW activeWallet ind
+
+            -- translate DSL BlockMeta' to Cardano BlockMeta
+            expected' <- runTranslateT $ intBlockMeta intCtxt blockMeta'
+
+            -- grab a snapshot of the wallet state to get the BlockMeta produced by evaluating the inductive
+            snapshot <- liftIO (Kernel.getWalletSnapshot (Kernel.walletPassive activeWallet))
+            let actual' = actualBlockMeta snapshot
+
+            shouldBe actual' expected'
+
+    checkTxMeta' :: Hash h Addr
+                 => UseWalletWorker
+                 -> (Inductive h Addr, Kernel.PassiveWallet -> IO ())
+                 -> Kernel.ActiveWallet
+                 -> IO ()
+    checkTxMeta' useWW (ind, checker) activeWallet = do
+          _ <- evaluate' useWW activeWallet ind
+          checker (Kernel.walletPassive $ activeWallet)
+
 
 {-------------------------------------------------------------------------------
   Manually written inductives
@@ -137,7 +245,7 @@ dependentPending GenesisValues{..} = Inductive {
 bracketPassiveWallet :: (Kernel.PassiveWallet -> IO a) -> IO a
 bracketPassiveWallet postHook = do
       Keystore.bracketTestKeystore $ \keystore ->
-          Kernel.bracketPassiveWallet logMessage keystore rocksDBNotAvailable postHook
+          Kernel.bracketPassiveWallet logMessage keystore mockNodeStateDef postHook
   where
    -- TODO: Decide what to do with logging.
    -- For now we are not logging them to stdout to not alter the output of
@@ -156,5 +264,6 @@ bracketActiveWallet test =
 -- TODO: Decide what we want to do with submitted transactions
 diffusion :: Kernel.WalletDiffusion
 diffusion =  Kernel.WalletDiffusion {
-    walletSendTx = \_tx -> return False
-  }
+      walletSendTx                = \_tx -> return False
+    , walletGetSubscriptionStatus = return mempty
+    }

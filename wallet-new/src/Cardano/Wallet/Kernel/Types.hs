@@ -16,23 +16,17 @@ module Cardano.Wallet.Kernel.Types (
     -- ** From raw to derived types
   , fromRawResolvedTx
   , fromRawResolvedBlock
-  , txUtxo
   ) where
 
 import           Universum
 
 import qualified Data.List.NonEmpty as NE
-import qualified Data.Map.Strict as Map
-import           Data.Word (Word32)
 import           Formatting.Buildable (Buildable (..))
 
-import           Pos.Chain.Txp (Utxo)
-import           Pos.Core.Block (MainBlock, gbBody, mainBlockSlot, mbTxs,
+import           Pos.Chain.Block (MainBlock, gbBody, mainBlockSlot, mbTxs,
                      mbWitnesses)
-import           Pos.Core.Txp (Tx, TxAux (..), TxId, TxIn (..), TxOut,
-                     TxOutAux (..), txInputs, txOutputs)
-import           Pos.Crypto.Hashing (hash)
-import           Serokell.Util (enumerate)
+import qualified Pos.Core as Core
+import           Pos.Core.Txp (Tx, TxAux (..), TxId, TxIn (..), txInputs)
 
 import           Formatting (bprint, (%))
 import qualified Formatting as F
@@ -40,6 +34,7 @@ import qualified Formatting as F
 import qualified Cardano.Wallet.Kernel.DB.HdWallet as HD
 import           Cardano.Wallet.Kernel.DB.InDb
 import           Cardano.Wallet.Kernel.DB.Resolved
+import qualified Cardano.Wallet.Kernel.Util.Core as Core
 
 {-------------------------------------------------------------------------------
   Abstract WalletId and AccountId
@@ -94,13 +89,16 @@ type ResolvedTxInputs = NonEmpty ResolvedInput
 -- | All resolved inputs of a block
 type ResolvedBlockInputs = [ResolvedTxInputs]
 
+type RawMeta = Core.Timestamp
+
 -- | Signed transaction along with its resolved inputs
 --
 -- Constructor is marked as unsafe because the caller should make sure that
 -- invariant 'invRawResolvedTx' holds.
 data RawResolvedTx = UnsafeRawResolvedTx {
-      rawResolvedTx       :: TxAux
-    , rawResolvedTxInputs :: ResolvedTxInputs
+      rawResolvedTx       :: !TxAux
+    , rawResolvedTxInputs :: !ResolvedTxInputs
+    , rawResolvedTxMeta   :: !RawMeta
     }
 
 -- | Invariant for 'RawResolvedTx'
@@ -110,10 +108,10 @@ invRawResolvedTx :: TxAux -> ResolvedTxInputs -> Bool
 invRawResolvedTx txAux ins = length (taTx txAux ^. txInputs) == length ins
 
 -- | Smart constructor for 'RawResolvedTx' that checks the invariant
-mkRawResolvedTx :: TxAux -> ResolvedTxInputs -> RawResolvedTx
-mkRawResolvedTx txAux ins =
+mkRawResolvedTx :: Core.Timestamp -> TxAux -> ResolvedTxInputs -> RawResolvedTx
+mkRawResolvedTx timestamp txAux ins =
     if invRawResolvedTx txAux ins
-      then UnsafeRawResolvedTx txAux ins
+      then UnsafeRawResolvedTx txAux ins timestamp
       else error "mkRawResolvedTx: invariant violation"
 
 -- | Signed block along with its resolved inputs
@@ -122,13 +120,16 @@ mkRawResolvedTx txAux ins =
 -- invariant 'invRawResolvedBlock' holds.
 data RawResolvedBlock = UnsafeRawResolvedBlock {
       -- | The underlying 'MainBlock'
-      rawResolvedBlock       :: MainBlock
+      rawResolvedBlock       :: !MainBlock
 
       -- | Resolved inputs
       --
       -- Working with these inputs is more convenient using a 'ResolvedBlock';
       -- see 'fromRawResolvedBlock'.
-    , rawResolvedBlockInputs :: ResolvedBlockInputs
+    , rawResolvedBlockInputs :: !ResolvedBlockInputs
+
+    -- | The creation time of this Block.
+    , rawTimestamp           :: !Core.Timestamp
     }
 
 -- | Invariant for 'RawResolvedBlock'
@@ -147,10 +148,11 @@ invRawResolvedBlock block ins =
 -- | Smart constructor for 'RawResolvedBlock' that checks the invariant
 mkRawResolvedBlock :: MainBlock
                    -> ResolvedBlockInputs
+                   -> Core.Timestamp
                    -> RawResolvedBlock
-mkRawResolvedBlock block ins =
+mkRawResolvedBlock block ins timestamp =
     if invRawResolvedBlock block ins
-      then UnsafeRawResolvedBlock block ins
+      then UnsafeRawResolvedBlock block ins timestamp
       else error "mkRawResolvedBlock: invariant violation"
 
 {-------------------------------------------------------------------------------
@@ -158,48 +160,35 @@ mkRawResolvedBlock block ins =
 -------------------------------------------------------------------------------}
 
 fromRawResolvedTx :: RawResolvedTx -> ResolvedTx
-fromRawResolvedTx rtx = ResolvedTx {
-      _rtxInputs  = InDb $ NE.zip inps (rawResolvedTxInputs rtx)
-    , _rtxOutputs = InDb $ txUtxo_ tx txId
+fromRawResolvedTx UnsafeRawResolvedTx{..} = ResolvedTx {
+      _rtxInputs  = InDb $ NE.zip inps rawResolvedTxInputs
+    , _rtxOutputs = InDb $ Core.txOuts tx
+    , _rtxMeta    = InDb $ (txId, rawResolvedTxMeta)
     }
   where
     tx :: Tx
-    tx = taTx (rawResolvedTx rtx)
+    tx = taTx rawResolvedTx
 
-    txId = hash tx
+    txId :: TxId
+    txId = Core.txAuxId rawResolvedTx
 
     inps :: NonEmpty TxIn
     inps = tx ^. txInputs
 
-txUtxo_ :: Tx -> TxId -> Utxo
-txUtxo_ tx txId = Map.fromList $
-                      map (toTxInOut txId) (outs tx)
-
-txUtxo :: Tx -> Utxo
-txUtxo tx = txUtxo_ tx txId
-          where txId = hash tx
-
-outs :: Tx -> [(Word32, TxOut)]
-outs tx = enumerate $ toList $ tx ^. txOutputs
-
-toTxInOut :: TxId -> (Word32, TxOut) -> (TxIn, TxOutAux)
-toTxInOut txId (idx, out) = (TxInUtxo txId idx, TxOutAux out)
-
 fromRawResolvedBlock :: RawResolvedBlock -> ResolvedBlock
-fromRawResolvedBlock rb = ResolvedBlock {
-      _rbTxs  = zipWith aux (getBlockTxs b)
-                            (rawResolvedBlockInputs rb)
-
-    , _rbSlot = InDb (b ^. mainBlockSlot)
+fromRawResolvedBlock UnsafeRawResolvedBlock{..} = ResolvedBlock {
+      _rbTxs    = zipWith aux (getBlockTxs rawResolvedBlock)
+                              rawResolvedBlockInputs
+    , _rbSlotId = rawResolvedBlock ^. mainBlockSlot
+    , _rbMeta   = rawTimestamp
     }
   where
-    b = rawResolvedBlock rb
 
     -- Justification for the use of the unsafe constructor:
     -- The invariant for 'RawResolvedBlock' guarantees the invariant for the
     -- individual transactions.
     aux :: TxAux -> ResolvedTxInputs -> ResolvedTx
-    aux txAux ins = fromRawResolvedTx $ UnsafeRawResolvedTx txAux ins
+    aux txAux ins = fromRawResolvedTx $ UnsafeRawResolvedTx txAux ins rawTimestamp
 
 {-------------------------------------------------------------------------------
   Auxiliary

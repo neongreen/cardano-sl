@@ -1,3 +1,5 @@
+{-# LANGUAGE RecordWildCards #-}
+
 -- | Functionality related to 'Address' data type and related types.
 
 module Pos.Core.Common.Address
@@ -16,6 +18,7 @@ module Pos.Core.Common.Address
        , checkRedeemAddress
 
        -- * Encoding
+       , addrToBase58
        , encodeAddr
        , encodeAddrCRC32
 
@@ -78,7 +81,6 @@ import qualified Pos.Binary.Class as Bi
 import           Pos.Core.Attributes (Attributes (..), attrData, mkAttributes)
 import           Pos.Core.Common.Coin ()
 import           Pos.Core.Constants (accountGenesisIndex, wAddressGenesisIndex)
-import           Pos.Core.Genesis.Canonical ()
 import           Pos.Crypto.Hashing (hashHexF)
 import           Pos.Crypto.HD (HDAddressPayload, HDPassphrase,
                      ShouldCheckPassphrase (..), deriveHDPassphrase,
@@ -86,6 +88,7 @@ import           Pos.Crypto.HD (HDAddressPayload, HDPassphrase,
 import           Pos.Crypto.Signing (EncryptedSecretKey, PassPhrase, PublicKey,
                      RedeemPublicKey, SecretKey, deterministicKeyGen,
                      emptyPassphrase, encToPublic, noPassEncrypt)
+import           Pos.Util.Json.Canonical ()
 import           Pos.Util.Json.Parse (tryParseString)
 import           Pos.Util.Util (toAesonError)
 

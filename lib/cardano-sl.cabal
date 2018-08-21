@@ -85,6 +85,8 @@ library
                         -- Utilities/helpers
                         Pos.Util.Config
                         Pos.Util.OutboundQueue
+                        Pos.Util.UserKeyError
+                        Pos.Util.UserPublic
                         Pos.Util.UserSecret
 
                         Pos.Web
@@ -241,7 +243,6 @@ library
                         DefaultSignatures
                         NoImplicitPrelude
                         OverloadedStrings
-                        RecordWildCards
                         TypeApplications
                         TupleSections
                         ViewPatterns
@@ -277,6 +278,8 @@ test-suite cardano-test
                        -- Everything else
                        Test.Pos.Block.Arbitrary.Message
                        Test.Pos.Block.CborSpec
+                       Test.Pos.Cbor.Arbitrary.UserPublic
+                       Test.Pos.Cbor.Arbitrary.UserSecret
                        Test.Pos.Cbor.CborSpec
                        Test.Pos.ConstantsSpec
                        Test.Pos.Diffusion.BlockSpec
@@ -359,7 +362,6 @@ test-suite cardano-test
                         DefaultSignatures
                         NoImplicitPrelude
                         OverloadedStrings
-                        RecordWildCards
                         TypeApplications
                         TupleSections
                         ViewPatterns
@@ -429,7 +431,6 @@ benchmark cardano-bench-criterion
                         DefaultSignatures
                         NoImplicitPrelude
                         OverloadedStrings
-                        RecordWildCards
                         TypeApplications
                         TupleSections
                         ViewPatterns

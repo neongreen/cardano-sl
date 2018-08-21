@@ -1,6 +1,7 @@
 {-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE GADTs               #-}
 {-# LANGUAGE RankNTypes          #-}
+{-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TemplateHaskell     #-}
 {-# LANGUAGE TypeApplications    #-}
@@ -67,8 +68,9 @@ newRealModeContext
     -> NodeDBs
     -> ConfigurationOptions
     -> FilePath
+    -> FilePath
     -> IO (RealModeContext ())
-newRealModeContext pm txpConfig dbs confOpts secretKeyPath = do
+newRealModeContext pm txpConfig dbs confOpts publicKeyPath secretKeyPath = do
     let nodeArgs = NodeArgs {
       behaviorConfigPath = Nothing
     }
@@ -86,6 +88,7 @@ newRealModeContext pm txpConfig dbs confOpts secretKeyPath = do
          , rebuildDB              = True
          , cnaAssetLockPath       = Nothing
          , devGenesisSecretI      = Nothing
+         , publicKeyfilePath      = publicKeyPath
          , keyfilePath            = secretKeyPath
          , networkConfigOpts      = networkOps
          , jlPath                 = Nothing
@@ -128,14 +131,15 @@ walletRunner
     -> ConfigurationOptions
     -> NodeDBs
     -> FilePath
+    -> FilePath
     -> WalletDB
     -> UberMonad a
     -> IO a
-walletRunner pm txpConfig confOpts dbs secretKeyPath ws act = do
+walletRunner pm txpConfig confOpts dbs publicKeyPath secretKeyPath ws act = do
     wwmc <- WalletWebModeContext <$> pure ws
                                  <*> newTVarIO def
                                  <*> liftIO newTQueueIO
-                                 <*> newRealModeContext pm txpConfig dbs confOpts secretKeyPath
+                                 <*> newRealModeContext pm txpConfig dbs confOpts publicKeyPath secretKeyPath
     runReaderT act wwmc
 
 newWalletState :: MonadIO m => Bool -> FilePath -> m WalletDB
@@ -171,7 +175,7 @@ main = do
         ws   <- newWalletState (isJust addTo) walletPath -- Recreate or not
 
         let generatedWallet = generateWalletDB cli spec
-        walletRunner pm txpConfig cfg dbs secretKeyPath ws generatedWallet
+        walletRunner pm txpConfig cfg dbs publicKeyPath secretKeyPath ws generatedWallet
         closeState ws
 
         showStatsData "after" walletPath

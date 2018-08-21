@@ -52,8 +52,6 @@ data CreateAddressError =
       -- to find another random index would be too expensive
     deriving Eq
 
--- TODO(adn): This will be done as part of my work on the 'newTransaction'
--- endpoint, see [CBR-313].
 instance Arbitrary CreateAddressError where
     arbitrary = oneof []
 
@@ -159,4 +157,3 @@ createHdRndAddress spendingPassword esk accId pw = do
         -- The maximum number of allowed collisions.
         maxAllowedCollisions :: Word32
         maxAllowedCollisions = 1024
-

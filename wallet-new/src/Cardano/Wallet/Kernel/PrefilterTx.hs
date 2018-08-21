@@ -8,6 +8,7 @@ module Cardano.Wallet.Kernel.PrefilterTx
        , AddrWithId
        , prefilterBlock
        , prefilterUtxo
+       , filterOurs
        ) where
 
 import           Universum
@@ -35,9 +36,9 @@ import           Cardano.Wallet.Kernel.DB.BlockMeta
 import           Cardano.Wallet.Kernel.DB.HdWallet
 import           Cardano.Wallet.Kernel.DB.InDb (InDb (..), fromDb)
 import           Cardano.Wallet.Kernel.DB.Resolved (ResolvedBlock,
-                     ResolvedInput, ResolvedTx, rbSlot, rbTxs, rtxInputs,
-                     rtxOutputs)
-
+                     ResolvedInput, ResolvedTx, rbSlotId, rbTxs, rtxInputs,
+                     rtxOutputs, toTxMeta)
+import           Cardano.Wallet.Kernel.DB.TxMeta.Types
 import           Cardano.Wallet.Kernel.Types (WalletId (..))
 
 {-------------------------------------------------------------------------------
@@ -54,16 +55,16 @@ type AddrWithId = (HdAddressId,Address)
 -- the block that are relevant to the wallet.
 data PrefilteredBlock = PrefilteredBlock {
       -- | Relevant inputs
-      pfbInputs  :: Set TxIn
+      pfbInputs  :: !(Set TxIn)
 
       -- | Relevant outputs
-    , pfbOutputs :: Utxo
+    , pfbOutputs :: !Utxo
 
       -- | all output addresses present in the Utxo
-    , pfbAddrs   :: [AddrWithId]
+    , pfbAddrs   :: ![AddrWithId]
 
       -- | Prefiltered block metadata
-    , pfbMeta    :: BlockMeta
+    , pfbMeta    :: !LocalBlockMeta
     }
 
 deriveSafeCopy 1 'base ''PrefilteredBlock
@@ -78,7 +79,8 @@ emptyPrefilteredBlock = PrefilteredBlock {
       pfbInputs  = Set.empty
     , pfbOutputs = Map.empty
     , pfbAddrs   = []
-    , pfbMeta    = mempty
+    , pfbMeta    = emptyLocalBlockMeta
+
     }
 
 type WalletKey = (WalletId, WalletDecrCredentials)
@@ -115,11 +117,16 @@ type UtxoSummaryRaw = Map TxIn (TxOutAux,AddressSummary)
 -- | Prefilter the inputs and outputs of a resolved transaction.
 --   Prefiltered inputs and outputs are indexed by accountId.
 --   The output Utxo is extended with address summary information
+--   This returns a list of TxMeta, because TxMeta also includes
+--   AccountId information, so the same Tx may belong to multiple
+--   Accounts.
 prefilterTx :: WalletKey
             -> ResolvedTx
-            -> (Map HdAccountId (Set TxIn)      -- ^ prefiltered inputs
-              , Map HdAccountId UtxoSummaryRaw) -- ^ prefiltered output utxo, extended with address summary
-prefilterTx wKey tx = (prefInps,prefOuts')
+            -> ((Map HdAccountId (Set TxIn)
+              , Map HdAccountId UtxoSummaryRaw)
+              , [TxMeta])
+            -- ^ prefiltered inputs, prefiltered output utxo, extended with address summary
+prefilterTx wKey tx = ((prefInps,prefOuts'),metas)
     where
         inps = toList (tx ^. rtxInputs  . fromDb)
         outs =         tx ^. rtxOutputs . fromDb
@@ -129,6 +136,10 @@ prefilterTx wKey tx = (prefInps,prefOuts')
 
         prefOuts' = Map.map (extendWithSummary (onlyOurInps,onlyOurOuts))
                             prefOuts
+
+        allAccounts = toList $ Map.keysSet prefInps <> Map.keysSet prefOuts
+
+        metas = map (toTxMeta tx) allAccounts
 
 -- | Prefilter inputs of a transaction
 prefilterInputs :: WalletKey
@@ -183,8 +194,7 @@ prefilterResolvedTxPairs wKey mergeF pairs
     = (onlyOurs, mergeF prefTxPairs)
     where
         selectAddr = txOutAddress . toaOut . snd
-
-        prefTxPairs = prefilter wKey selectAddr pairs
+        prefTxPairs = filterOurs wKey selectAddr pairs
         -- | if prefiltering excluded nothing, then all the pairs are "ours"
         onlyOurs = (length prefTxPairs == length pairs)
 
@@ -196,11 +206,11 @@ prefilterResolvedTxPairs wKey mergeF pairs
 -- the AccountId from the Tx Attributes. This is not sufficient since it
 -- doesn't actually _verify_ that the Tx belongs to the AccountId.
 -- We need to add verification (see `deriveLvl2KeyPair`).
-prefilter :: WalletKey
-     -> (a -> Address)      -- ^ address getter
-     -> [a]                 -- ^ list to filter
-     -> [(a, HdAddressId)]  -- ^ matching items
-prefilter (wid,wdc) selectAddr rtxs
+filterOurs :: WalletKey
+           -> (a -> Address)      -- ^ address getter
+           -> [a]                 -- ^ list to filter
+           -> [(a, HdAddressId)]  -- ^ matching items
+filterOurs (wid,wdc) selectAddr rtxs
     = map f $ selectOwnAddresses wdc selectAddr rtxs
     where f (addr,meta) = (addr, toAddressId wid meta)
 
@@ -235,32 +245,37 @@ extendWithSummary (onlyOurInps,onlyOurOuts) utxoWithAddrId
 
 {-------------------------------------------------------------------------------
  Pre-filter a block of transactions, adorn each prefiltered block with block metadata
+ and Transaction metadata.
 +-------------------------------------------------------------------------------}
 
 -- | Prefilter the transactions of a resolved block for the given wallet.
 --
 --   Returns prefiltered blocks indexed by HdAccountId.
-prefilterBlock :: WalletId
+prefilterBlock :: ResolvedBlock
+               -> WalletId
                -> EncryptedSecretKey
-               -> ResolvedBlock
-               -> Map HdAccountId PrefilteredBlock
-prefilterBlock wid esk block
-    = Map.fromList $ map (mkPrefBlock slotId inpAll outAll) (Set.toList accountIds)
+               -> (Map HdAccountId PrefilteredBlock, [TxMeta])
+prefilterBlock block wid esk =
+      (Map.fromList
+    $ map (mkPrefBlock (block ^. rbSlotId) inpAll outAll)
+    $ Set.toList accountIds
+    , metas)
   where
     wdc :: WalletDecrCredentials
-    wdc = eskToWalletDecrCredentials esk
+    wdc  = eskToWalletDecrCredentials esk
     wKey = (wid, wdc)
 
     inps :: [Map HdAccountId (Set TxIn)]
     outs :: [Map HdAccountId UtxoSummaryRaw]
-    (inps, outs) = unzip $ map (prefilterTx wKey) (block ^. rbTxs)
+    (ios, conMetas) = unzip $ map (prefilterTx wKey) (block ^. rbTxs)
+    (inps, outs) = unzip ios
+    metas = concat conMetas
 
     inpAll :: Map HdAccountId (Set TxIn)
     outAll :: Map HdAccountId UtxoSummaryRaw
     inpAll = Map.unionsWith Set.union inps
     outAll = Map.unionsWith Map.union outs
 
-    slotId = block ^. rbSlot . fromDb
     accountIds = Map.keysSet inpAll `Set.union` Map.keysSet outAll
 
 mkPrefBlock :: SlotId
@@ -268,8 +283,12 @@ mkPrefBlock :: SlotId
             -> Map HdAccountId (Map TxIn (TxOutAux, AddressSummary))
             -> HdAccountId
             -> (HdAccountId, PrefilteredBlock)
-mkPrefBlock slotId inps outs accId
-    = (accId, PrefilteredBlock inps' outs' addrs'' blockMeta')
+mkPrefBlock slotId inps outs accId = (accId, PrefilteredBlock {
+        pfbInputs  = inps'
+      , pfbOutputs = outs'
+      , pfbAddrs   = addrs''
+      , pfbMeta    = blockMeta'
+      })
     where
         fromAddrSummary :: AddressSummary -> AddrWithId
         fromAddrSummary AddressSummary{..} = (addrSummaryId,addrSummaryAddr)
@@ -279,12 +298,11 @@ mkPrefBlock slotId inps outs accId
         inps'           =                  byAccountId accId Set.empty inps
         (outs', addrs') = fromUtxoSummary (byAccountId accId Map.empty outs)
 
-        addrs'' = nub $ map fromAddrSummary addrs'
-
+        addrs''    = nub $ map fromAddrSummary addrs'
         blockMeta' = mkBlockMeta slotId addrs'
 
-mkBlockMeta :: SlotId -> [AddressSummary] -> BlockMeta
-mkBlockMeta slotId addrs_ = BlockMeta{..}
+mkBlockMeta :: SlotId -> [AddressSummary] -> LocalBlockMeta
+mkBlockMeta slotId addrs_ = LocalBlockMeta BlockMeta{..}
     where
         txIds' = nub $ map addrSummaryTxId addrs_
 
@@ -330,9 +348,8 @@ mkAddressMeta addrs
 --   NOTE: Since there will be at least one AddressSummary per Address,
 --   we can safely use NE.fromList.
 indexByAddr :: [AddressSummary] -> Map Address (NE.NonEmpty AddressSummary)
-indexByAddr addrs
-    -- TODO @uroboros/ryan construct NE lists and use NE.concat (would need NE.concat)
-    = Map.map NE.fromList (Map.fromListWith (++) addrs')
+indexByAddr addrs =
+    Map.map NE.fromList (Map.fromListWith (++) addrs')
     where
         fromAddrSummary addrSummary = (addrSummaryAddr addrSummary, [addrSummary])
         addrs' = map fromAddrSummary addrs

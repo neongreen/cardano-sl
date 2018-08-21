@@ -1,3 +1,5 @@
+{-# LANGUAGE RecordWildCards #-}
+
 module Pos.Core.Slotting.EpochIndex
        ( EpochIndex (..)
        , HasEpochIndex (..)
@@ -17,7 +19,7 @@ import           Text.JSON.Canonical (FromJSON (..), ReportSchemaErrors,
                      ToJSON (..))
 
 import           Pos.Binary.Class (Bi (..))
-import           Pos.Core.Genesis.Canonical ()
+import           Pos.Util.Json.Canonical ()
 import           Pos.Util.Some (Some, liftLensSome)
 
 -- | Index of epoch.

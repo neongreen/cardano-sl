@@ -6,6 +6,7 @@ module Cardano.Wallet.Kernel.Util.StrictStateT (
     StrictStateT -- opaque
   , runStrictStateT
   , evalStrictStateT
+  , execStrictStateT
   , strictStateT
     -- * Conduit support
   , strictStateC
@@ -14,9 +15,9 @@ module Cardano.Wallet.Kernel.Util.StrictStateT (
 
 import           Universum
 
+import           Conduit
 import           Control.Monad.Except (MonadError)
 import           Crypto.Random (MonadRandom (..))
-import           Data.Conduit
 import           Data.Conduit.Internal (ConduitT (..), Pipe (..))
 
 -- | Drop-in replacement for 'StateT' that updates the state strictly.
@@ -31,6 +32,7 @@ newtype StrictStateT s m a = StrictStateT {
            , MonadCatch
            , MonadThrow
            , MonadIO
+           , MonadResource
            )
 
 instance MonadRandom m => MonadRandom (StrictStateT s m) where
@@ -45,6 +47,9 @@ runStrictStateT = runStateT . unStrictStateT
 
 evalStrictStateT :: Monad m => StrictStateT s m a -> s -> m a
 evalStrictStateT = evalStateT . unStrictStateT
+
+execStrictStateT :: Monad m => StrictStateT s m a -> s -> m s
+execStrictStateT = execStateT . unStrictStateT
 
 strictStateT :: forall s m a. Monad m => (s -> m (a, s)) -> StrictStateT s m a
 strictStateT f = StrictStateT $ StateT f'

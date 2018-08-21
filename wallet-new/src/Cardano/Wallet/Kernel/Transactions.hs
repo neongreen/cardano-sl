@@ -4,73 +4,99 @@ module Cardano.Wallet.Kernel.Transactions (
     , estimateFees
     -- * Errors
     , NewTransactionError(..)
+    , SignTransactionError(..)
     , PaymentError(..)
     , EstimateFeesError(..)
     , cardanoFee
     -- * Internal & testing use only
     , newTransaction
+    , toMeta
   ) where
 
 import           Universum
 
 import           Control.Lens (to)
+import           Control.Monad.Except (MonadError (..), withExceptT)
 import           Control.Retry (RetryPolicyM, RetryStatus, applyPolicy,
                      fullJitterBackoff, limitRetries, retrying)
 import           Crypto.Random (MonadRandom (..))
+import qualified Data.ByteArray as ByteArray
+import qualified Data.ByteString as B
+import qualified Data.List.NonEmpty as NonEmpty
 import qualified Data.Set as Set
 import qualified Data.Vector as V
 import           System.Random.MWC (GenIO, asGenIO, initialize, uniformVector)
-import           Test.QuickCheck (Arbitrary (..))
+import           Test.QuickCheck (Arbitrary (..), oneof)
 
 import           Formatting (bprint, build, sformat, (%))
 import qualified Formatting.Buildable
 
-import qualified Data.ByteArray as ByteArray
-import qualified Data.ByteString as B
+import           Pos.Chain.Txp (Utxo)
+import           Pos.Core (Address, Coin, unsafeIntegerToCoin, unsafeSubCoin)
+import qualified Pos.Core as Core
+import           Pos.Core.Txp (Tx (..), TxAux (..), TxId, TxIn (..), TxOut (..),
+                     TxOutAux (..))
+import           Pos.Crypto (EncryptedSecretKey, PassPhrase, SafeSigner (..),
+                     ShouldCheckPassphrase (..), hash)
 
 import qualified Cardano.Wallet.Kernel.Addresses as Kernel
-import           Cardano.Wallet.Kernel.CoinSelection.FromGeneric (Cardano,
-                     CoinSelFinalResult (..), CoinSelectionOptions,
+import           Cardano.Wallet.Kernel.CoinSelection.FromGeneric
+                     (CoinSelFinalResult (..), CoinSelectionOptions,
                      dummyAddrAttrSize, dummyTxAttrSize, estimateCardanoFee,
                      estimateMaxTxInputs, mkStdTx)
 import qualified Cardano.Wallet.Kernel.CoinSelection.FromGeneric as CoinSelection
 import           Cardano.Wallet.Kernel.CoinSelection.Generic
                      (CoinSelHardErr (..))
-import           Cardano.Wallet.Kernel.DB.AcidState (NewPendingError)
+import           Cardano.Wallet.Kernel.DB.AcidState (DB, NewPendingError)
 import           Cardano.Wallet.Kernel.DB.HdWallet
 import qualified Cardano.Wallet.Kernel.DB.HdWallet as HD
-import           Cardano.Wallet.Kernel.DB.HdWallet.Read
-                     (readHdAddressByCardanoAddress)
-import           Cardano.Wallet.Kernel.Types (AccountId (..), WalletId (..))
-import           Cardano.Wallet.Kernel.Util (paymentAmount, utxoBalance,
-                     utxoRestrictToInputs)
-
-import           Cardano.Wallet.Kernel (getWalletSnapshot, newPending)
+import           Cardano.Wallet.Kernel.DB.InDb
 import           Cardano.Wallet.Kernel.DB.Read as Getters
+import           Cardano.Wallet.Kernel.DB.TxMeta.Types
 import           Cardano.Wallet.Kernel.Internal (ActiveWallet (..),
-                     walletKeystore)
+                     walletKeystore, walletNode)
 import qualified Cardano.Wallet.Kernel.Keystore as Keystore
-
-import           Pos.Core (Address, Coin, unsafeSubCoin)
-import qualified Pos.Core as Core
-import           Pos.Core.Txp (Tx (..), TxAux (..), TxOut (..), TxOutAux (..))
-
-import           Pos.Chain.Txp (Utxo)
-import           Pos.Crypto (EncryptedSecretKey, PassPhrase, SafeSigner (..),
-                     ShouldCheckPassphrase (..), hash)
+import           Cardano.Wallet.Kernel.NodeStateAdaptor (getMaxTxSize)
+import           Cardano.Wallet.Kernel.Pending (newPending)
+import           Cardano.Wallet.Kernel.Read (getWalletSnapshot)
+import           Cardano.Wallet.Kernel.Types (AccountId (..),
+                     RawResolvedTx (..), WalletId (..))
+import           Cardano.Wallet.Kernel.Util (shuffleNE)
+import           Cardano.Wallet.Kernel.Util.Core (paymentAmount, utxoBalance,
+                     utxoRestrictToInputs)
+import           Cardano.Wallet.WalletLayer.Kernel.Conv (exceptT)
 
 {-------------------------------------------------------------------------------
   Generating payments and estimating fees
 -------------------------------------------------------------------------------}
 
-data NewTransactionError = CoinSelectionFailed CoinSelHardErr
+data NewTransactionError =
+    NewTransactionUnknownAccount UnknownHdAccount
+  | NewTransactionErrorCoinSelectionFailed CoinSelHardErr
+  | NewTransactionErrorCreateAddressFailed Kernel.CreateAddressError
+  | NewTransactionErrorSignTxFailed SignTransactionError
+  | NewTransactionInvalidTxIn
 
 instance Buildable NewTransactionError where
-    build (CoinSelectionFailed hardErr) =
-        bprint ("CoinSelectionFailed " % build) hardErr
+    build (NewTransactionUnknownAccount err) =
+        bprint ("NewTransactionUnknownAccount " % build) err
+    build (NewTransactionErrorCoinSelectionFailed err) =
+        bprint ("NewTransactionErrorCoinSelectionFailed " % build) err
+    build (NewTransactionErrorCreateAddressFailed err) =
+        bprint ("NewTransactionErrorCreateAddressFailed " % build) err
+    build (NewTransactionErrorSignTxFailed err) =
+        bprint ("NewTransactionErrorSignTxFailed " % build) err
+    build NewTransactionInvalidTxIn =
+        bprint "NewTransactionInvalidTxIn"
 
 instance Arbitrary NewTransactionError where
-    arbitrary = CoinSelectionFailed <$> arbitrary
+    arbitrary = oneof [
+        NewTransactionUnknownAccount <$> arbitrary
+      , NewTransactionErrorCoinSelectionFailed <$> arbitrary
+      , NewTransactionErrorCreateAddressFailed <$> arbitrary
+      , NewTransactionErrorSignTxFailed <$> arbitrary
+      , pure NewTransactionInvalidTxIn
+      ]
 
 data PaymentError = PaymentNewTransactionError NewTransactionError
                   | PaymentNewPendingError NewPendingError
@@ -98,17 +124,14 @@ pay :: ActiveWallet
     -- ^ The source HD Account from where the payment was originated
     -> NonEmpty (Address, Coin)
     -- ^ The payees
-    -> IO (Either PaymentError Tx)
+    -> IO (Either PaymentError (Tx, TxMeta))
 pay activeWallet spendingPassword opts accountId payees = do
         retrying retryPolicy shouldRetry $ \rs -> do
-            (tx, _) <- newTransaction activeWallet spendingPassword opts accountId payees
-            case tx of
+            res <- newTransaction activeWallet spendingPassword opts accountId payees
+            case res of
                  Left e      -> return (Left $ PaymentNewTransactionError e)
-                 Right txAux -> do
-                     -- TODO(adn) As part of CBR-239 or CBR-324, we should
-                     -- ensure that 'newPending' inserts the transaction
-                     -- inside the TxMeta storage.
-                     succeeded <- newPending activeWallet accountId txAux
+                 Right (txAux, meta, _utxo) -> do
+                     succeeded <- newPending activeWallet accountId txAux (Just meta)
                      case succeeded of
                           Left e   -> do
                               -- If the next retry would bring us to the
@@ -120,7 +143,7 @@ pay activeWallet spendingPassword opts accountId payees = do
                                        PaymentSubmissionMaxAttemptsReached
                                    Just _  ->
                                        PaymentNewPendingError e
-                          Right () -> return . Right . taTx $ txAux
+                          Right () -> return $ Right (taTx $ txAux, meta)
     where
         -- See <https://aws.amazon.com/blogs/architecture/exponential-backoff-and-jitter>
         retryPolicy :: RetryPolicyM IO
@@ -128,12 +151,16 @@ pay activeWallet spendingPassword opts accountId payees = do
 
         -- If this is a hard coin selection error we cannot recover, stop
         -- retrying. If we get a 'Tx' as output, stop retrying immediately.
-        shouldRetry :: RetryStatus -> Either PaymentError Tx -> IO Bool
+        shouldRetry :: RetryStatus -> Either PaymentError a -> IO Bool
         shouldRetry _ (Right _)                             = return False
         shouldRetry _ (Left (PaymentNewTransactionError _)) = return False
         shouldRetry _ _                                     = return True
 
--- | Creates a new 'TxAux' without submitting it to the network.
+-- | Creates a new 'TxAux' and corresponding 'TxMeta',
+-- without submitting it to the network.
+--
+-- For testing purposes, if successful this additionally returns the utxo
+-- that coin selection was run against.
 newTransaction :: ActiveWallet
                -> PassPhrase
                -- ^ The spending password.
@@ -143,79 +170,118 @@ newTransaction :: ActiveWallet
                -- ^ The source HD account from where the payment should originate
                -> NonEmpty (Address, Coin)
                -- ^ The payees
-               -> IO (Either NewTransactionError TxAux, Utxo)
-newTransaction ActiveWallet{..} spendingPassword options accountId payees = do
+               -> IO (Either NewTransactionError (TxAux, TxMeta, Utxo))
+newTransaction ActiveWallet{..} spendingPassword options accountId payees = runExceptT $ do
+    initialEnv <- liftIO $ newEnvironment
+    maxTxSize  <- liftIO $ getMaxTxSize (walletPassive ^. walletNode)
+    let maxInputs = estimateMaxTxInputs dummyAddrAttrSize dummyTxAttrSize maxTxSize
 
-    -- | NOTE(mn) 65536 is the current maximum transaction size, but this can change
-    --   over time. @newTransaction@ should be parameterized over this value, perhaps
-    --   adding it to @CoinSelectionOptions@.
-    let maxInputs = estimateMaxTxInputs dummyAddrAttrSize dummyTxAttrSize 65536
-
-    snapshot <- getWalletSnapshot walletPassive
-    let availableUtxo = accountAvailableUtxo snapshot accountId
-
-    initialEnv <- newEnvironment
+    -- STEP 0: Get available UTxO
+    snapshot      <- liftIO $ getWalletSnapshot walletPassive
+    availableUtxo <- withExceptT NewTransactionUnknownAccount $ exceptT $
+                       currentAvailableUtxo snapshot accountId
 
     -- STEP 1: Run coin selection.
-    res <- flip runReaderT initialEnv . buildPayment $
-           CoinSelection.random options
-                                maxInputs
-                                (fmap toTxOut payees)
-                                availableUtxo
-    case res of
-         Left err -> return (Left . CoinSelectionFailed $ err, availableUtxo)
-         Right (CoinSelFinalResult inputs outputs coins) -> do
-             -- STEP 2: Generate the change addresses needed.
-             changeAddresses   <- genChangeOuts coins
+    CoinSelFinalResult inputs outputs coins <-
+      withExceptT NewTransactionErrorCoinSelectionFailed $ ExceptT $
+        flip runReaderT initialEnv . buildPayment $
+          CoinSelection.random options
+                               maxInputs
+                               (fmap toTxOut payees)
+                               availableUtxo
 
-             -- STEP 3: Perform the signing and forge the final TxAux.
-             let keystore = walletPassive ^. walletKeystore
-             mbEsk <- Keystore.lookup (WalletIdHdRnd $ accountId ^. hdAccountIdParent) keystore
-             let allWallets    = hdWallets snapshot
-                 signAddress   = mkSigner spendingPassword mbEsk allWallets
-                 mkTx          = mkStdTx walletProtocolMagic signAddress
+    -- STEP 2: Generate the change addresses needed.
+    changeAddresses <- withExceptT NewTransactionErrorCreateAddressFailed $
+                         genChangeOuts coins
 
-             (, availableUtxo) . bimap CoinSelectionFailed identity
-                 <$> mkTx inputs outputs changeAddresses
+    -- STEP 3: Perform the signing and forge the final TxAux.
+    mbEsk <- liftIO $ Keystore.lookup
+               (WalletIdHdRnd $ accountId ^. hdAccountIdParent)
+               (walletPassive ^. walletKeystore)
+    let signAddress = mkSigner spendingPassword mbEsk snapshot
+        mkTx        = mkStdTx walletProtocolMagic shuffleNE signAddress
 
-    where
-        -- Generate an initial seed for the random generator using the hash of
-        -- the payees, which ensure that the coin selection (and the fee estimation)
-        -- is \"pseudo deterministic\" and replicable.
-        newEnvironment :: IO Env
-        newEnvironment =
-            let initialSeed = V.fromList . map fromIntegral
-                                         . B.unpack
-                                         . encodeUtf8 @Text @ByteString
-                                         . sformat build
-                                         $ hash payees
-            in Env <$> initialize initialSeed
+    txAux <- withExceptT NewTransactionErrorSignTxFailed $ ExceptT $
+               mkTx inputs outputs changeAddresses
 
-        toTxOut :: (Address, Coin) -> TxOutAux
-        toTxOut (a, c) = TxOutAux (TxOut a c)
+    -- STEP 4: Compute metadata
+    let txId = hash . taTx $ txAux
+    txMeta <- createNewMeta accountId txId inputs (toaOut <$> outputs)
+    return (txAux, txMeta, availableUtxo)
+  where
+    -- Generate an initial seed for the random generator using the hash of
+    -- the payees, which ensure that the coin selection (and the fee estimation)
+    -- is \"pseudo deterministic\" and replicable.
+    newEnvironment :: IO Env
+    newEnvironment =
+        let initialSeed = V.fromList . map fromIntegral
+                                     . B.unpack
+                                     . encodeUtf8 @Text @ByteString
+                                     . sformat build
+                                     $ hash payees
+        in Env <$> initialize initialSeed
 
-        -- | Generates the list of change outputs from a list of change coins.
-        genChangeOuts :: MonadIO m => [Coin] -> m [TxOutAux]
-        genChangeOuts css = forM css $ \change -> do
-            changeAddr <- liftIO genChangeAddr
-            return TxOutAux {
-                toaOut = TxOut {
-                    txOutAddress = changeAddr
-                  , txOutValue   = change
-                  }
+    toTxOut :: (Address, Coin) -> TxOutAux
+    toTxOut (a, c) = TxOutAux (TxOut a c)
+
+    -- | Generates the list of change outputs from a list of change coins.
+    genChangeOuts :: MonadIO m
+                  => [Coin]
+                  -> ExceptT Kernel.CreateAddressError m [TxOutAux]
+    genChangeOuts css = forM css $ \change -> do
+        changeAddr <- genChangeAddr
+        return TxOutAux {
+            toaOut = TxOut {
+                txOutAddress = changeAddr
+              , txOutValue   = change
               }
+          }
 
-        -- | Monadic computation to generate a new change 'Address'. This will
-        -- run after coin selection, when we create the final transaction as
-        -- part of 'mkTx'.
-        genChangeAddr :: IO Address
-        genChangeAddr = do
-            res <- Kernel.createAddress spendingPassword
-                                        (AccountIdHdRnd accountId)
-                                        walletPassive
-            case res of
-                 Right addr -> pure addr
-                 Left err   -> throwM err
+    -- | Monadic computation to generate a new change 'Address'. This will
+    -- run after coin selection, when we create the final transaction as
+    -- part of 'mkTx'.
+    genChangeAddr :: MonadIO m
+                  => ExceptT Kernel.CreateAddressError m Address
+    genChangeAddr = ExceptT $ liftIO $
+        Kernel.createAddress spendingPassword
+                             (AccountIdHdRnd accountId)
+                             walletPassive
+
+createNewMeta :: HdAccountId -> TxId -> NonEmpty (TxIn, TxOutAux) -> NonEmpty TxOut -> ExceptT NewTransactionError IO TxMeta
+createNewMeta hdId txId inp out = do
+    time <- Core.getCurrentTimestamp
+    metaForNewTx time hdId txId inp out
+
+metaForNewTx :: (Monad m) => Core.Timestamp -> HdAccountId -> TxId -> NonEmpty (TxIn, TxOutAux) -> NonEmpty TxOut -> ExceptT NewTransactionError m TxMeta
+metaForNewTx time accountId txId inputs outputs = do
+    inputsForMeta <- forM inputs toInput
+    return TxMeta {
+                  _txMetaId = txId
+                , _txMetaAmount = minBound -- TODO(kde): find out what this should be. |sum(o) - sum(i)| maybe?
+                , _txMetaInputs = inputsForMeta
+                , _txMetaOutputs = aux <$> outputs
+                , _txMetaCreationAt = time
+                , _txMetaIsLocal = False -- TODO(kde): find a way to check if all addresses are ours.
+                , _txMetaIsOutgoing = True
+                , _txMetaWalletId = _fromDb $ getHdRootId (accountId ^. hdAccountIdParent)
+                , _txMetaAccountIx = getHdAccountIx $ accountId ^. hdAccountIdIx
+            }
+  where
+    aux txOut = (txOutAddress txOut, txOutValue txOut)
+    toInput (txin, txOutAux) = case txin of
+        TxInUtxo txid index ->
+            let (addr, coins) = aux $ toaOut txOutAux
+            in return (txid, index, addr, coins)
+        TxInUnknown _ _ -> throwError NewTransactionInvalidTxIn
+
+toMeta :: Monad m => Core.Timestamp -> HdAccountId -> RawResolvedTx -> m (Either NewTransactionError TxMeta)
+toMeta time accountId UnsafeRawResolvedTx{..} = do
+    let txId = hash . taTx $ rawResolvedTx
+        (txIns :: NonEmpty TxIn) = _txInputs $ taTx rawResolvedTx
+        (inputsRes :: NonEmpty TxOutAux) = rawResolvedTxInputs
+        inputs = NonEmpty.zip txIns inputsRes
+        txOuts = _txOutputs $ taTx rawResolvedTx
+    runExceptT $ metaForNewTx time accountId txId inputs txOuts
 
 -- | Special monad used to process the payments, which randomness is derived
 -- from a fixed seed obtained from hashing the payees. This guarantees that
@@ -265,10 +331,11 @@ estimateFees :: ActiveWallet
              -- ^ The payees
              -> IO (Either EstimateFeesError Coin)
 estimateFees activeWallet@ActiveWallet{..} spendingPassword options accountId payees = do
-    (res, originalUtxo) <- newTransaction activeWallet spendingPassword options accountId payees
+    res <- newTransaction activeWallet spendingPassword options accountId payees
     case res of
          Left e  -> return . Left . EstFeesTxCreationFailed $ e
-         Right tx -> -- calculate the fee as the difference between inputs and outputs.
+         Right (tx, _txMeta, originalUtxo) ->
+             -- calculate the fee as the difference between inputs and outputs.
              -- NOTE(adn) In case of 'SenderPaysFee' is practice there might be a slightly
              -- increase of the projected fee in the case we are forced to pick "yet another input"
              -- to be able to pay the fee, which would, in turn, also increase the fee due to
@@ -276,34 +343,50 @@ estimateFees activeWallet@ActiveWallet{..} spendingPassword options accountId pa
              return $ Right
                     $ sumOfInputs tx originalUtxo `unsafeSubCoin` sumOfOutputs tx
   where
+      -- Unlike a block, a /single transaction/ cannot have inputs that sum to
+      -- more than maxCoinVal
       sumOfInputs :: TxAux -> Utxo -> Coin
       sumOfInputs tx utxo =
           let inputs = Set.fromList $ toList . _txInputs . taTx $ tx
-          in utxoBalance (utxoRestrictToInputs inputs utxo)
+          in unsafeIntegerToCoin $
+               utxoBalance (utxo `utxoRestrictToInputs` inputs)
 
       sumOfOutputs :: TxAux -> Coin
       sumOfOutputs tx =
           let outputs = _txOutputs . taTx $ tx
           in paymentAmount outputs
 
+-- | Errors during transaction signing
+--
+-- NOTE: Under normal circumstances these should /never/ be thrown. If they
+-- do, it most likely indicates a bug.
+data SignTransactionError =
+    SignTransactionMissingKey Address
+  | SignTransactionErrorUnknownAddress Address
+  | SignTransactionErrorNotOwned Address
 
--- NOTE(adn) At the moment we are passing
--- the full set of Hd wallets as input, which means our lookup function
--- for an 'HdAddress' can span across the whole wallets and can be very
--- costly. However, in the way the 'DB' is modelled at the moment, we
--- store the addresses in a \"flat\" representation (i.e. in an 'IxSet'),
--- so indexing directly by 'Core.Address' might not be any less efficient
--- than performing two lookups, one on 'HdAccountId' followed by one on
--- 'Core.Address'.
+instance Buildable SignTransactionError where
+    build (SignTransactionMissingKey addr) =
+        bprint ("SignTransactionMissingKey " % build) addr
+    build (SignTransactionErrorUnknownAddress addr) =
+        bprint ("SignTransactionErrorUnknownAddress " % build) addr
+    build (SignTransactionErrorNotOwned addr) =
+        bprint ("SignTransactionErrorNotOwned " % build) addr
+
+-- in order to be able to generate an Arbitrary address we'd need to use
+-- the cardano-sl-core test package
+instance Arbitrary SignTransactionError where
+    arbitrary = oneof []
+
 mkSigner :: PassPhrase
          -> Maybe EncryptedSecretKey
-         -> HD.HdWallets
+         -> DB
          -> Address
-         -> Either CoinSelHardErr SafeSigner
-mkSigner _ Nothing _ addr = Left (CoinSelHardErrAddressNotOwned (Proxy @ Cardano) addr)
-mkSigner spendingPassword (Just esk) allWallets addr =
-    case readHdAddressByCardanoAddress addr allWallets of
-        Left _ -> Left (CoinSelHardErrAddressNotOwned (Proxy @ Cardano) addr)
+         -> Either SignTransactionError SafeSigner
+mkSigner _ Nothing _ addr = Left (SignTransactionMissingKey addr)
+mkSigner spendingPassword (Just esk) snapshot addr =
+    case Getters.lookupCardanoAddress snapshot addr of
+        Left _ -> Left (SignTransactionErrorUnknownAddress addr)
         Right hdAddr ->
             let addressIndex = hdAddr ^. HD.hdAddressId
                                        . HD.hdAddressIdIx
@@ -321,8 +404,8 @@ mkSigner spendingPassword (Just esk) allWallets addr =
             in case res of
                  Just (a, _) | a == addr ->
                      Right (SafeSigner esk spendingPassword)
-                 _                   ->
-                     Left (CoinSelHardErrAddressNotOwned (Proxy @ Cardano) addr)
+                 _otherwise              ->
+                     Left (SignTransactionErrorNotOwned addr)
 
 -- | An estimate of the Tx fees in Cardano based on a sensible number of defaults.
 cardanoFee :: Int -> NonEmpty Coin -> Coin

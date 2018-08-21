@@ -1,3 +1,5 @@
+{-# LANGUAGE RecordWildCards #-}
+
 -- | Functions which work with MemVar.
 
 module Pos.DB.Update.MemState.Functions
@@ -11,10 +13,10 @@ import qualified Data.HashMap.Strict as HM
 
 import           Pos.Binary.Class (biSize)
 import           Pos.Chain.Update (LocalVotes)
-import           Pos.Core.StateLock (Priority (..), StateLock,
-                     withStateLockNoMetrics)
 import           Pos.Core.Update (UpdatePayload (..), UpdateVote (..))
 import           Pos.Crypto (PublicKey, hash)
+import           Pos.DB.GState.Lock (Priority (..), StateLock,
+                     withStateLockNoMetrics)
 import           Pos.DB.Update.MemState.Types (MemPool (..))
 import           Pos.Util.Util (HasLens')
 

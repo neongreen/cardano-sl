@@ -1,5 +1,6 @@
 {-# LANGUAGE AllowAmbiguousTypes #-}
 {-# LANGUAGE RankNTypes          #-}
+{-# LANGUAGE RecordWildCards     #-}
 -- Ignore the Semigroup + Monoid constraints, that ghc8.4 complains about.
 {-# OPTIONS_GHC -Wno-redundant-constraints    #-}
 
@@ -21,13 +22,11 @@ import           System.Random (RandomGen (..))
 import           System.Wlog (logWarning)
 
 import           Pos.AllSecrets (HasAllSecrets (..), unInvSecretsMap)
-import           Pos.Chain.Block (Blund)
+import           Pos.Chain.Block (Block, BlockHeader, Blund, mkGenesisBlock)
 import           Pos.Chain.Delegation (ProxySKBlockInfo)
 import           Pos.Chain.Txp (TxpConfiguration)
 import           Pos.Core (EpochOrSlot (..), SlotId (..), addressHash,
                      epochIndexL, getEpochOrSlot, getSlotIndex)
-import           Pos.Core.Block (Block, BlockHeader)
-import           Pos.Core.Block.Constructors (mkGenesisBlock)
 import           Pos.Crypto (ProtocolMagic, pskDelegatePk)
 import           Pos.DB.Block (ShouldCallBListener (..),
                      VerifyBlocksContext (..), applyBlocksUnsafe,

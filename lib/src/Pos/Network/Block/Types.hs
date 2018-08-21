@@ -20,7 +20,7 @@ import           Universum
 import           Node.Message.Class (Message (..))
 import           Pos.Binary.Class (Bi (..), Cons (..), Field (..),
                      deriveSimpleBi, encodeListLen, enforceSize)
-import           Pos.Core.Block (Block, BlockHeader (..), HeaderHash)
+import           Pos.Chain.Block (Block, BlockHeader (..), HeaderHash)
 import           Pos.Core.Chrono (NE, NewestFirst (..))
 import           Pos.DB.Class (SerializedBlock)
 import           Pos.Util.Util (cborError)
@@ -54,9 +54,9 @@ data MsgGetHeaders = MsgGetHeaders
     } deriving (Generic, Show, Eq)
 
 instance Buildable MsgGetHeaders where
-    build (MsgGetHeaders mghFrom mghTo) =
+    build (MsgGetHeaders mghFrom' mghTo') =
         bprint ("MsgGetHeaders {from = "%listJson%", to = "%build%"}")
-               mghFrom (maybe "<Nothing>" (bprint build) mghTo)
+               mghFrom' (maybe "<Nothing>" (bprint build) mghTo')
 
 instance Message MsgGetHeaders where
     messageCode _ = 4
@@ -75,9 +75,9 @@ data MsgGetBlocks = MsgGetBlocks
     } deriving (Generic, Show, Eq)
 
 instance Buildable MsgGetBlocks where
-    build (MsgGetBlocks mgbFrom mgbTo) =
+    build (MsgGetBlocks mgbFrom' mgbTo') =
         bprint ("MsgGetBlocks {from = "%build%", to = "%build%"}")
-               mgbFrom mgbTo
+               mgbFrom' mgbTo'
 
 instance Message MsgGetBlocks where
     messageCode _ = 6

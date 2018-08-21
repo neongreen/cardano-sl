@@ -1,4 +1,5 @@
-{-# LANGUAGE TypeOperators #-}
+{-# LANGUAGE RecordWildCards #-}
+{-# LANGUAGE TypeOperators   #-}
 
 -- | Logic for global processing of transactions.  Global transaction
 -- is a transaction which has already been added to the blockchain.
@@ -22,6 +23,7 @@ import qualified Data.HashMap.Strict as HM
 import qualified Data.List.NonEmpty as NE
 import           Formatting (build, sformat, (%))
 
+import           Pos.Chain.Block (ComponentBlock (..))
 import           Pos.Chain.Txp (ExtendedGlobalToilM, GlobalToilEnv (..),
                      GlobalToilM, GlobalToilState (..), StakesView (..),
                      ToilVerFailure, TxpConfiguration (..), Utxo, UtxoM,
@@ -30,7 +32,6 @@ import           Pos.Chain.Txp (ExtendedGlobalToilM, GlobalToilEnv (..),
                      runGlobalToilMBase, runUtxoM, utxoToLookup, verifyToil)
 import           Pos.Core (HasCoreConfiguration, HasGenesisData, ProtocolMagic,
                      epochIndexL)
-import           Pos.Core.Block.Union (ComponentBlock (..))
 import           Pos.Core.Chrono (NE, NewestFirst (..), OldestFirst (..))
 import           Pos.Core.Exception (assertionFailed)
 import           Pos.Core.Txp (TxAux, TxUndo, TxpUndo)

@@ -1,3 +1,5 @@
+{-# LANGUAGE RecordWildCards #-}
+
 module Pos.Core.Ssc.VssCertificate
        ( VssCertificate (..)
 
@@ -23,17 +25,17 @@ import           Data.Hashable (Hashable (..))
 import           Data.SafeCopy (base, deriveSafeCopySimple)
 import           Formatting (bprint, build, int, (%))
 import qualified Formatting.Buildable as Buildable
-import           Pos.Core.Common (StakeholderId, addressHash)
 import           Text.JSON.Canonical (FromJSON (..), Int54, JSValue (..),
                      ReportSchemaErrors, ToJSON (..), fromJSField, mkObject)
 
 import           Pos.Binary.Class (AsBinary, Bi (..), encodeListLen,
                      enforceSize)
-import           Pos.Core.Genesis.Canonical ()
+import           Pos.Core.Common (StakeholderId, addressHash)
 import           Pos.Core.Slotting (EpochIndex)
 import           Pos.Crypto (ProtocolMagic, PublicKey, SecretKey,
                      SignTag (SignVssCert), Signature, VssPublicKey, checkSig,
                      sign, toPublic)
+import           Pos.Util.Json.Canonical ()
 
 -- | VssCertificate allows VssPublicKey to participate in MPC. Each
 -- stakeholder should create a Vss keypair, sign VSS public key with signing
@@ -74,6 +76,9 @@ instance Ord VssCertificate where
 instance Buildable VssCertificate where
     build UnsafeVssCertificate {..} = bprint
         ("vssCert:"%build%":"%int) vcSigningKey vcExpiryEpoch
+
+instance Buildable (StakeholderId, VssCertificate) where
+    build (a, b) = bprint ("(id: "%build%" , cert: "%build%")") a b
 
 instance Hashable VssCertificate where
     hashWithSalt s UnsafeVssCertificate{..} =

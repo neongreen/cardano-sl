@@ -7,16 +7,15 @@ import           Universum
 
 import           Servant
 
-import           Cardano.Wallet.API
-import           Cardano.Wallet.API.V1.Swagger (swaggerSchemaUIServer)
-import           Cardano.Wallet.Server.CLI (RunMode (..))
-import           Cardano.Wallet.WalletLayer (ActiveWalletLayer)
 import           Pos.Chain.Update (HasUpdateConfiguration, curSoftwareVersion)
 import           Pos.Util.CompileInfo (HasCompileInfo, compileInfo)
 
+import           Cardano.Wallet.API
 import qualified Cardano.Wallet.API.V1.Handlers as V1
+import           Cardano.Wallet.API.V1.Swagger (swaggerSchemaUIServer)
 import qualified Cardano.Wallet.API.V1.Swagger as Swagger
-
+import           Cardano.Wallet.Server.CLI (RunMode (..))
+import           Cardano.Wallet.WalletLayer (ActiveWalletLayer)
 
 -- | Serve the REST interface to the wallet
 --
@@ -31,14 +30,11 @@ walletServer w _ =
     :<|> v1Handler
     :<|> internalHandler
   where
-    -- TODO: Not sure if we want to support the V0 API with the new wallet.
-    -- For now I'm assuming we're not going to.
-    --
     -- TODO: It'd be nicer to not throw an exception here, but servant doesn't
     -- make this very easy at the moment.
     v0Handler       = error "V0 API no longer supported"
     v1Handler       = V1.handlers w
-    internalHandler = error "Internal API not yet defined"
+    internalHandler = error "TODO: Internal API not yet defined (CBR-377)"
 
 
 walletDocServer :: (HasCompileInfo, HasUpdateConfiguration) => Server WalletDocAPI

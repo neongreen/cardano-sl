@@ -1,37 +1,46 @@
 {-# LANGUAGE DeriveFunctor   #-}
 {-# LANGUAGE DeriveGeneric   #-}
+{-# LANGUAGE LambdaCase      #-}
 {-# LANGUAGE OverloadedLists #-}
 module Cardano.Wallet.API.Response (
     Metadata (..)
   , ResponseStatus(..)
   , WalletResponse(..)
+  , JSONValidationError(..)
   -- * Generating responses for collections
   , respondWith
+  , fromSlice
   -- * Generating responses for single resources
   , single
+
+  -- * A slice of a collection
+  , SliceOf(..)
+
   , ValidJSON
   ) where
 
 import           Prelude
-import           Universum (Buildable, decodeUtf8, toText, (<>))
+import           Universum (Buildable, Exception, Text, decodeUtf8, toText,
+                     (<>))
 
-import           Cardano.Wallet.API.Response.JSend (ResponseStatus (..))
-import           Control.Lens
-import           Data.Aeson
+import           Control.Lens hiding (Indexable)
+import           Data.Aeson (FromJSON (..), ToJSON (..), eitherDecode, encode)
 import           Data.Aeson.Encode.Pretty (encodePretty)
 import qualified Data.Aeson.Options as Serokell
 import           Data.Aeson.TH
 import qualified Data.Char as Char
-import           Data.Swagger as S
+import           Data.Swagger as S hiding (Example, example)
 import           Data.Typeable
 import           Formatting (bprint, build, (%))
 import qualified Formatting.Buildable
+import           Generics.SOP.TH (deriveGeneric)
 import           GHC.Generics (Generic)
+import           Servant (err400)
 import           Servant.API.ContentTypes (Accept (..), JSON, MimeRender (..),
                      MimeUnrender (..), OctetStream)
 import           Test.QuickCheck
 
-import           Cardano.Wallet.API.Indices (Indexable', IxSet')
+import           Cardano.Wallet.API.Indices (Indexable, IxSet)
 import           Cardano.Wallet.API.Request (RequestParams (..))
 import           Cardano.Wallet.API.Request.Filter (FilterOperations (..))
 import           Cardano.Wallet.API.Request.Pagination (Page (..),
@@ -39,9 +48,13 @@ import           Cardano.Wallet.API.Request.Pagination (Page (..),
                      PerPage (..))
 import           Cardano.Wallet.API.Request.Sort (SortOperations (..))
 import           Cardano.Wallet.API.Response.Filter.IxSet as FilterBackend
+import           Cardano.Wallet.API.Response.JSend (HasDiagnostic (..),
+                     ResponseStatus (..))
 import           Cardano.Wallet.API.Response.Sort.IxSet as SortBackend
-import           Cardano.Wallet.API.V1.Errors
-                     (WalletError (JSONValidationFailed))
+import           Cardano.Wallet.API.V1.Errors (ToServantError (..))
+import           Cardano.Wallet.API.V1.Generic (jsendErrorGenericParseJSON,
+                     jsendErrorGenericToJSON)
+import           Cardano.Wallet.API.V1.Swagger.Example (Example, example)
 
 -- | Extra information associated with an HTTP response.
 data Metadata = Metadata
@@ -64,6 +77,9 @@ instance Buildable Metadata where
   build Metadata{..} =
     bprint ("{ pagination="%build%" }") metaPagination
 
+instance Example Metadata
+
+
 -- | An `WalletResponse` models, unsurprisingly, a response (successful or not)
 -- produced by the wallet backend.
 -- Includes extra informations like pagination parameters etc.
@@ -75,6 +91,17 @@ data WalletResponse a = WalletResponse
   , wrMeta   :: Metadata
   -- ^ Extra metadata to be returned.
   } deriving (Show, Eq, Generic, Functor)
+
+data SliceOf a = SliceOf {
+    paginatedSlice :: [a]
+  -- ^ A paginated fraction of the resource
+  , paginatedTotal :: Int
+  -- ^ The total number of entries
+  }
+
+instance Arbitrary a => Arbitrary (SliceOf a) where
+  arbitrary = SliceOf <$> arbitrary <*> arbitrary
+
 
 deriveJSON Serokell.defaultOptions ''WalletResponse
 
@@ -110,6 +137,12 @@ instance Buildable a => Buildable (WalletResponse a) where
         wrMeta
         wrData
 
+instance Example a => Example (WalletResponse a) where
+    example = WalletResponse <$> example
+                             <*> pure SuccessStatus
+                             <*> example
+
+
 -- | Inefficient function to build a response out of a @generator@ function. When the data layer will
 -- be rewritten the obvious solution is to slice & dice the data as soon as possible (aka out of the DB), in this order:
 --
@@ -127,37 +160,50 @@ instance Buildable a => Buildable (WalletResponse a) where
 -- lazyness to avoid work. This might not be optimal in terms of performances and we might need to swap sorting
 -- and pagination.
 --
-respondWith :: (Monad m, Indexable' a)
+respondWith :: (Monad m, Indexable a)
             => RequestParams
-            -> FilterOperations a
+            -> FilterOperations ixs a
             -- ^ Filtering operations to perform on the data.
             -> SortOperations a
             -- ^ Sorting operations to perform on the data.
-            -> m (IxSet' a)
+            -> m (IxSet a)
             -- ^ The monadic action which produces the results.
             -> m (WalletResponse [a])
 respondWith RequestParams{..} fops sorts generator = do
     (theData, paginationMetadata) <- paginate rpPaginationParams . sortData sorts . applyFilters fops <$> generator
-    return $ WalletResponse {
+    return WalletResponse {
              wrData = theData
            , wrStatus = SuccessStatus
            , wrMeta = Metadata paginationMetadata
            }
 
 paginate :: PaginationParams -> [a] -> ([a], PaginationMetadata)
-paginate PaginationParams{..} rawResultSet =
+paginate params@PaginationParams{..} rawResultSet =
     let totalEntries = length rawResultSet
-        perPage@(PerPage pp)   = ppPerPage
-        currentPage@(Page cp)  = ppPage
-        totalPages             = max 1 $ ceiling (fromIntegral totalEntries / (fromIntegral pp :: Double))
-        metadata               = PaginationMetadata {
-                                 metaTotalPages = totalPages
-                               , metaPage = currentPage
-                               , metaPerPage = perPage
-                               , metaTotalEntries = totalEntries
-                               }
-        slice                  = take pp . drop ((cp - 1) * pp)
+        (PerPage pp) = ppPerPage
+        (Page cp)    = ppPage
+        metadata     = paginationParamsToMeta params totalEntries
+        slice        = take pp . drop ((cp - 1) * pp)
     in (slice rawResultSet, metadata)
+
+paginationParamsToMeta :: PaginationParams -> Int -> PaginationMetadata
+paginationParamsToMeta PaginationParams{..} totalEntries =
+    let perPage@(PerPage pp) = ppPerPage
+        currentPage          = ppPage
+        totalPages = max 1 $ ceiling (fromIntegral totalEntries / (fromIntegral pp :: Double))
+    in PaginationMetadata {
+      metaTotalPages = totalPages
+    , metaPage = currentPage
+    , metaPerPage = perPage
+    , metaTotalEntries = totalEntries
+    }
+
+fromSlice :: PaginationParams -> SliceOf a -> WalletResponse [a]
+fromSlice params (SliceOf theData totalEntries) = WalletResponse {
+      wrData   = theData
+    , wrStatus = SuccessStatus
+    , wrMeta   = Metadata (paginationParamsToMeta params totalEntries)
+    }
 
 
 -- | Creates a 'WalletResponse' with just a single record into it.
@@ -184,3 +230,40 @@ instance Accept ValidJSON where
 
 instance ToJSON a => MimeRender ValidJSON a where
     mimeRender _ = mimeRender (Proxy @ JSON)
+
+
+--
+-- Error from parsing / validating JSON inputs
+--
+
+newtype JSONValidationError
+    = JSONValidationFailed Text
+    deriving (Eq, Show, Generic)
+
+deriveGeneric ''JSONValidationError
+
+instance ToJSON JSONValidationError where
+    toJSON =
+        jsendErrorGenericToJSON
+
+instance FromJSON JSONValidationError where
+    parseJSON =
+        jsendErrorGenericParseJSON
+
+instance Exception JSONValidationError
+
+instance Arbitrary JSONValidationError where
+    arbitrary =
+        pure (JSONValidationFailed "JSON validation failed.")
+
+instance Buildable JSONValidationError where
+    build _ =
+        bprint "Couldn't decode a JSON input."
+
+instance HasDiagnostic JSONValidationError where
+    getDiagnosticKey _ =
+        "validationError"
+
+instance ToServantError JSONValidationError where
+    declareServantError _ =
+        err400

@@ -1,10 +1,18 @@
+{-# LANGUAGE BangPatterns       #-}
+{-# LANGUAGE StandaloneDeriving #-}
+
+-- | General purpose utility functions
 module Cardano.Wallet.Kernel.Util (
     -- * Lists
     at
+  , neHead
+  , shuffle
+  , shuffleNE
     -- * Maps and sets
   , disjoint
   , withoutKeys
   , restrictKeys
+  , markMissingMapEntries
     -- * Dealing with OldestFirst/NewestFirst
   , liftOldestFirstF
   , liftNewestFirstF
@@ -13,24 +21,31 @@ module Cardano.Wallet.Kernel.Util (
     -- * Probabilities
   , Probability
   , toss
-    -- * Operations on UTxO
-  , utxoBalance
-  , utxoRestrictToInputs
-  , paymentAmount
-    -- * General-utility functions
-  , getCurrentTimestamp
+    -- * MonadState utilities
+  , modifyAndGetOld
+  , modifyAndGetNew
+    -- * ExceptT utilities
+  , exceptT
+    -- * Spaceleak free version of WriterT
+  , Collect(..)
+  , traverseCollect
+    -- * Dealing with Void
+  , mustBeRight
   ) where
 
 import           Universum
 
-import qualified Data.Map as Map
+import           Control.Monad.Except (MonadError (..))
+import           Crypto.Number.Generate (generateBetween)
+import qualified Data.List.NonEmpty as NE
+import qualified Data.Map.Merge.Strict as Map.Merge
+import qualified Data.Map.Strict as Map
 import qualified Data.Set as Set
-import           Data.Time.Clock.POSIX (getPOSIXTime)
+import qualified Data.Vector as V
+import           Data.Vector.Mutable (IOVector)
+import qualified Data.Vector.Mutable as MV
 import           Pos.Core.Chrono
 import qualified Test.QuickCheck as QC
-
-import qualified Pos.Chain.Txp as Core
-import qualified Pos.Core as Core
 
 {-------------------------------------------------------------------------------
   Lists
@@ -41,6 +56,32 @@ at :: [a] -> Int -> Maybe a
 at []     _ = Nothing
 at (x:_)  0 = Just x
 at (_:xs) i = at xs (i - 1)
+
+neHead :: Lens' (NonEmpty a) a
+neHead f (x :| xs) = (:| xs) <$> f x
+
+shuffle :: [a] -> IO [a]
+shuffle = modifyInPlace $ \v -> do
+    let (lo, hi) = (0, MV.length v - 1)
+    forM_ [lo .. hi] $ \i -> do
+      j <- fromInteger <$> generateBetween (fromIntegral lo) (fromIntegral hi)
+      swapElems v i j
+  where
+    swapElems :: IOVector a -> Int -> Int -> IO ()
+    swapElems v i j = do
+        x <- MV.read v i
+        y <- MV.read v j
+        MV.write v i y
+        MV.write v j x
+
+shuffleNE :: NonEmpty a -> IO (NonEmpty a)
+shuffleNE = fmap NE.fromList . shuffle . NE.toList
+
+modifyInPlace :: forall a. (IOVector a -> IO ()) -> [a] -> IO [a]
+modifyInPlace f xs = do
+    v' <- V.thaw $ V.fromList xs
+    f v'
+    V.toList <$> V.freeze v'
 
 {-------------------------------------------------------------------------------
   Maps and sets
@@ -57,6 +98,15 @@ m `withoutKeys` s = m `Map.difference` Map.fromSet (const ()) s
 
 restrictKeys :: Ord k => Map k a -> Set k -> Map k a
 m `restrictKeys` s = m `Map.intersection` Map.fromSet (const ()) s
+
+-- | @markMissingMapEntries mustExist@ adds a 'Nothing' value for each key
+-- in @mustExist@ that doesn't exist in the input map.
+markMissingMapEntries :: Ord k => Map k b -> Map k a -> Map k (Maybe a)
+markMissingMapEntries =
+    Map.Merge.merge
+      (Map.Merge.mapMaybeMissing     $ \_k _b   -> Just $ Nothing)
+      (Map.Merge.mapMaybeMissing     $ \_k    a -> Just $ Just a)
+      (Map.Merge.zipWithMaybeMatched $ \_k _b a -> Just $ Just a)
 
 {-------------------------------------------------------------------------------
   Dealing with OldestFirst/NewestFirst
@@ -95,41 +145,58 @@ toss 1 = return True
 toss p = (< p) <$> QC.choose (0, 1)
 
 {-------------------------------------------------------------------------------
-  Operations on UTxO
+  MonadState util
 -------------------------------------------------------------------------------}
 
--- | Computes the balance for this 'Utxo'. We use 'unsafeAddCoin' as
--- as long as the 'maxCoinVal' stays within the 'Word64' 'maxBound', the
--- circulating supply of coins is finite and as such we should never have
--- to sum an 'Utxo' which would exceed the bounds.
--- If it does, this is clearly a bug and we throw an 'ErrorCall' exception
--- (crf. 'unsafeAddCoin' implementation).
-utxoBalance :: Core.Utxo -> Core.Coin
-utxoBalance = foldl' updateFn (Core.mkCoin 0) . Map.elems
-    where
-        updateFn :: Core.Coin -> Core.TxOutAux -> Core.Coin
-        updateFn acc txOutAux =
-            acc `Core.unsafeAddCoin` (toCoin txOutAux)
+-- | Modify the state and return the new state
+modifyAndGetNew :: MonadState s m => (s -> s) -> m s
+modifyAndGetNew f = state $ \old -> let new = f old in (new, new)
 
--- | Restricts the 'Utxo' to only the selected set of inputs.
-utxoRestrictToInputs :: Set Core.TxIn -> Core.Utxo -> Core.Utxo
-utxoRestrictToInputs inps utxo = utxo `restrictKeys` inps
-
--- | Calculates the amount of a requested payment.
-paymentAmount :: NonEmpty Core.TxOut -> Core.Coin
-paymentAmount = Core.unsafeIntegerToCoin
-              . Core.sumCoins
-              . map Core.txOutValue
-              . toList
-
--- | Gets the underlying value (as a 'Coin') from a 'TxOutAux'.
-toCoin :: Core.TxOutAux -> Core.Coin
-toCoin = Core.txOutValue . Core.toaOut
+-- | Modify the state and return the old state
+modifyAndGetOld :: MonadState s m => (s -> s) -> m s
+modifyAndGetOld f = state $ \old -> let new = f old in (old, new)
 
 {-------------------------------------------------------------------------------
-  General-utility functions
+  ExceptT utilities
 -------------------------------------------------------------------------------}
 
--- (NOTE: we are abandoning the 'Mockable time' strategy of the Cardano code base)
-getCurrentTimestamp :: IO Core.Timestamp
-getCurrentTimestamp = Core.Timestamp . round . (* 1000000) <$> getPOSIXTime
+exceptT :: Monad m => Either e a -> ExceptT e m a
+exceptT (Left  e) = throwError e
+exceptT (Right a) = return a
+
+{-------------------------------------------------------------------------------
+  Spaceleak free version of WriterT
+-------------------------------------------------------------------------------}
+
+-- | Applicative-only, strict, spaceleak-free version of 'WriterT'
+newtype Collect w f a = Collect { runCollect :: f (a, w) }
+
+deriving instance Show (f (a, w)) => Show (Collect w f a)
+
+instance Functor f => Functor (Collect w f) where
+  fmap f (Collect bcs) = Collect (fmap (first f) bcs)
+
+instance (Applicative f, Monoid w) => Applicative (Collect w f) where
+  pure x = Collect (pure (x, mempty))
+  Collect fcs <*> Collect bcs = Collect (aux <$> fcs <*> bcs)
+    where
+      -- We force the evaluation of both logs, and tie the evaluation of their
+      -- concatenation of the pair also, just to be sure to be sure
+      aux :: (a -> b, w) -> (a, w) -> (b, w)
+      aux (f, !w) (a, !w') = let !w'' = mappend w w' in (f a, w'')
+
+-- | Walk over a traversable data structure, collecting additional results
+traverseCollect :: forall t f a b c. (Traversable t, Applicative f)
+                => (a -> f (b, c)) -> t a -> f (t b, [c])
+traverseCollect f = runCollect . traverse f'
+  where
+    f' :: a -> Collect [c] f b
+    f' = Collect . fmap (second (:[])) . f
+
+{-------------------------------------------------------------------------------
+  Dealing with Void
+-------------------------------------------------------------------------------}
+
+mustBeRight :: Either Void b -> b
+mustBeRight (Left  a) = absurd a
+mustBeRight (Right b) = b

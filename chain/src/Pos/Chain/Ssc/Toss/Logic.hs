@@ -1,3 +1,5 @@
+{-# LANGUAGE RecordWildCards #-}
+
 -- | Main Toss logic.
 
 module Pos.Chain.Ssc.Toss.Logic
@@ -16,6 +18,7 @@ import           Crypto.Random (MonadRandom)
 import qualified Data.HashMap.Strict as HM
 import           System.Wlog (logError)
 
+import           Pos.Chain.Block.Union (IsMainHeader, headerSlotL)
 import           Pos.Chain.Ssc.Error (SscVerifyError (..))
 import           Pos.Chain.Ssc.Functions (verifySscPayload)
 import           Pos.Chain.Ssc.Toss.Base (checkPayload)
@@ -25,7 +28,6 @@ import           Pos.Core (EpochIndex, EpochOrSlot (..), HasProtocolConstants,
                      LocalSlotIndex, SlotCount, SlotId (siSlot), StakeholderId,
                      epochIndexL, epochOrSlot, getEpochOrSlot, mkCoin,
                      slotSecurityParam)
-import           Pos.Core.Block (IsMainHeader, headerSlotL)
 import           Pos.Core.Chrono (NewestFirst (..))
 import           Pos.Core.Ssc (CommitmentsMap (..), InnerSharesMap, Opening,
                      SignedCommitment, SscPayload (..), VssCertificate,

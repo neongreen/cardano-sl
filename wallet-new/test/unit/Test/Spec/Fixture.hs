@@ -24,10 +24,10 @@ import qualified Cardano.Wallet.API.V1.Types as V1
 import qualified Cardano.Wallet.Kernel.Diffusion as Kernel
 import           Cardano.Wallet.Kernel.Internal (ActiveWallet, PassiveWallet)
 import qualified Cardano.Wallet.Kernel.Keystore as Keystore
-import           Cardano.Wallet.Kernel.MonadDBReadAdaptor (rocksDBNotAvailable)
+import           Cardano.Wallet.Kernel.NodeStateAdaptor (mockNodeStateDef)
 import           Cardano.Wallet.WalletLayer (ActiveWalletLayer,
                      PassiveWalletLayer)
-import qualified Cardano.Wallet.WalletLayer as WalletLayer
+import qualified Cardano.Wallet.WalletLayer.Kernel as WalletLayer.Kernel
 
 -- | Do not pollute the test runner output with logs.
 devNull :: Severity -> Text -> IO ()
@@ -42,7 +42,7 @@ withLayer :: MonadIO m
           -> PropertyM IO a
 withLayer cc = do
     liftIO $ Keystore.bracketTestKeystore $ \keystore -> do
-        WalletLayer.bracketKernelPassiveWallet devNull keystore rocksDBNotAvailable $ \layer wallet -> do
+        WalletLayer.Kernel.bracketPassiveWallet devNull keystore mockNodeStateDef $ \layer wallet -> do
             cc layer wallet
 
 type GenPassiveWalletFixture x = PropertyM IO (PassiveWallet -> IO x)
@@ -55,7 +55,7 @@ withPassiveWalletFixture :: MonadIO m
 withPassiveWalletFixture prepareFixtures cc = do
     generateFixtures <- prepareFixtures
     liftIO $ Keystore.bracketTestKeystore $ \keystore -> do
-        WalletLayer.bracketKernelPassiveWallet devNull keystore rocksDBNotAvailable $ \layer wallet -> do
+        WalletLayer.Kernel.bracketPassiveWallet devNull keystore mockNodeStateDef $ \layer wallet -> do
             fixtures <- generateFixtures wallet
             cc keystore layer wallet fixtures
 
@@ -66,13 +66,14 @@ withActiveWalletFixture :: MonadIO m
 withActiveWalletFixture prepareFixtures cc = do
     generateFixtures <- prepareFixtures
     liftIO $ Keystore.bracketTestKeystore $ \keystore -> do
-        WalletLayer.bracketKernelPassiveWallet devNull keystore rocksDBNotAvailable $ \passiveLayer passiveWallet -> do
+        WalletLayer.Kernel.bracketPassiveWallet devNull keystore mockNodeStateDef $ \passiveLayer passiveWallet -> do
             withDefConfiguration $ \pm -> do
-                WalletLayer.bracketKernelActiveWallet pm passiveLayer passiveWallet diffusion $ \activeLayer activeWallet -> do
+                WalletLayer.Kernel.bracketActiveWallet pm passiveLayer passiveWallet diffusion $ \activeLayer activeWallet -> do
                     fixtures <- generateFixtures keystore activeWallet
                     cc keystore activeLayer activeWallet fixtures
     where
         diffusion :: Kernel.WalletDiffusion
-        diffusion =  Kernel.WalletDiffusion {
-            walletSendTx = \_tx -> return False
+        diffusion = Kernel.WalletDiffusion {
+            walletSendTx                = \_tx -> return False
+          , walletGetSubscriptionStatus = return mempty
           }

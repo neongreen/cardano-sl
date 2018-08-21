@@ -16,17 +16,15 @@ import qualified Pos.Wallet.Web.State.Storage as V0
 
 import           Cardano.Wallet.API.Request
 import           Cardano.Wallet.API.Response
-import           Cardano.Wallet.API.V1.Errors
 import           Cardano.Wallet.API.V1.Migration
 import           Cardano.Wallet.API.V1.Types as V1
 import qualified Cardano.Wallet.API.V1.Wallets as Wallets
-import qualified Data.IxSet.Typed as IxSet
+import qualified Cardano.Wallet.Kernel.DB.Util.IxSet as IxSet
 import           Pos.Chain.Update ()
 import qualified Pos.Core as Core
 
 import           Pos.Util (HasLens (..))
 import qualified Pos.Wallet.WalletMode as V0
-import qualified Pos.Wallet.Web.Error.Types as V0
 import           Pos.Wallet.Web.Methods.Logic (MonadWalletLogic,
                      MonadWalletLogicRead)
 import           Pos.Wallet.Web.Tracking.Types (SyncQueue)
@@ -41,6 +39,9 @@ handlers = newWallet
     :<|> deleteWallet
     :<|> getWallet
     :<|> updateWallet
+    :<|> checkExternalWallet
+    :<|> newExternalWallet
+    :<|> deleteExternalWallet
 
 
 -- | Pure function which returns whether or not the underlying node is
@@ -80,8 +81,8 @@ newWallet NewWallet{..} = do
     -- is still catching up.
     unless (isNodeSufficientlySynced spV0) $ throwM (NodeIsStillSyncing syncPercentage)
 
-    let newWalletHandler CreateWallet  = V0.newWallet
-        newWalletHandler RestoreWallet = V0.restoreWalletFromSeed
+    let newWalletHandler CreateWallet  = V0.newWalletNoThrow
+        newWalletHandler RestoreWallet = V0.restoreWalletFromSeedNoThrow
         (V1 spendingPassword) = fromMaybe (V1 mempty) newwalSpendingPassword
         (BackupPhrase backupPhrase) = newwalBackupPhrase
     initMeta <- V0.CWalletMeta <$> pure newwalName
@@ -89,18 +90,14 @@ newWallet NewWallet{..} = do
                               <*> pure 0
     let walletInit = V0.CWalletInit initMeta (V0.CBackupPhrase backupPhrase)
     single <$> do
-        v0wallet <- newWalletHandler newwalOperation spendingPassword walletInit
-                        `catch` rethrowDuplicateMnemonic
-        ss <- V0.askWalletSnapshot
-        addWalletInfo ss v0wallet
-  where
-    -- NOTE: this is temporary solution until we get rid of V0 error handling and/or we lift error handling into types:
-    --   https://github.com/input-output-hk/cardano-sl/pull/2811#discussion_r183469153
-    --   https://github.com/input-output-hk/cardano-sl/pull/2811#discussion_r183472103
-    rethrowDuplicateMnemonic (e :: V0.WalletError) =
-        case e of
-            V0.RequestError "Wallet with that mnemonics already exists" -> throwM WalletAlreadyExists
-            _ -> throwM e
+        ev0wallet <- newWalletHandler newwalOperation spendingPassword walletInit
+        case ev0wallet of
+            Left cidWal -> do
+                walletId <- migrate cidWal
+                throwM (WalletAlreadyExists walletId)
+            Right v0wallet -> do
+                ss <- V0.askWalletSnapshot
+                addWalletInfo ss v0wallet
 
 -- | Returns the full (paginated) list of wallets.
 listWallets :: ( MonadThrow m
@@ -108,7 +105,7 @@ listWallets :: ( MonadThrow m
                , V0.MonadBlockchainInfo m
                )
             => RequestParams
-            -> FilterOperations Wallet
+            -> FilterOperations '[WalletId, Core.Coin] Wallet
             -> SortOperations Wallet
             -> m (WalletResponse [Wallet])
 listWallets params fops sops = do
@@ -185,3 +182,42 @@ updateWallet wid WalletUpdate{..} = do
         -- reacquire the snapshot because we did an update
         ws' <- V0.askWalletSnapshot
         addWalletInfo ws' updated
+
+-- | Check if external wallet is presented in node's wallet db.
+checkExternalWallet
+    :: -- ( V0.MonadWalletLogic ctx m
+       -- , V0.MonadWalletHistory ctx m
+       -- , MonadUnliftIO m
+       -- , HasLens SyncQueue ctx SyncQueue
+       -- )
+       -- =>
+    PublicKeyAsBase58
+    -> m (WalletResponse WalletAndTxHistory)
+checkExternalWallet _encodedRootPK =
+    error "[CHW-54], Cardano Hardware Wallet, check external wallet, legacy handler, unimplemented yet."
+
+-- | Creates a new or restores an existing external @wallet@ given a 'NewExternalWallet' payload.
+-- Returns to the client the representation of the created or restored wallet in the 'Wallet' type.
+newExternalWallet
+    :: -- ( MonadThrow m
+       -- , MonadUnliftIO m
+       -- , HasLens SyncQueue ctx SyncQueue
+       -- , V0.MonadBlockchainInfo m
+       -- , V0.MonadWalletLogic ctx m
+       -- )
+       -- =>
+    NewExternalWallet
+    -> m (WalletResponse Wallet)
+newExternalWallet NewExternalWallet{..} =
+    error "[CHW-80], Cardano Hardware Wallet, new external wallet, legacy handler, unimplemented yet."
+
+-- | On the disk, once imported or created, there's so far not much difference
+-- between a wallet and an external wallet, except one: node stores a public key
+-- for external wallet, there's no secret key.
+deleteExternalWallet
+    :: -- (V0.MonadWalletLogic ctx m)
+       -- =>
+    PublicKeyAsBase58
+    -> m NoContent
+deleteExternalWallet _encodedRootPK =
+    error "[CHW-106], Cardano Hardware Wallet, delete external wallet, legacy handler, unimplemented yet."
