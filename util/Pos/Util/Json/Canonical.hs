@@ -1,7 +1,5 @@
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 
-{-# LANGUAGE RecordWildCards #-}
-
 -- | Canonical encoding of 'GenesisData'.
 
 module Pos.Util.Json.Canonical
